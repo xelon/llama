@@ -21,6 +21,7 @@ const CHAT_STORAGE_KEY = "llama_city_conversations_v1";
 
 let selectedCity = cityButtons[0]?.dataset.city || "san-francisco";
 let cityConversations = {};
+let isSubmitting = false;
 
 function csrfToken() {
   const input = chatForm.querySelector("input[name=csrfmiddlewaretoken]");
@@ -87,6 +88,30 @@ function loadConversationState() {
   }
 }
 
+function activeConversationHasContent(citySlug = selectedCity) {
+  if (!citySlug) {
+    return false;
+  }
+  const turns = getConversation(citySlug);
+  return turns.some((turn) => typeof turn.content === "string" && turn.content.trim().length > 0);
+}
+
+function canDownloadPlanForActiveChat() {
+  const hasVisibleChat = Boolean(chatLog.querySelector(".bubble")) && !chatLog.querySelector("#starter-state");
+  return !isSubmitting && activeConversationHasContent() && hasVisibleChat;
+}
+
+function updateDownloadPlanButtonState() {
+  const shouldDisableDownload = !canDownloadPlanForActiveChat();
+  downloadPlanButton.classList.toggle("is-disabled", shouldDisableDownload);
+  downloadPlanButton.setAttribute("aria-disabled", shouldDisableDownload ? "true" : "false");
+  if (shouldDisableDownload && !isSubmitting) {
+    downloadPlanButton.title = "Start a chat before downloading the plan.";
+  } else {
+    downloadPlanButton.removeAttribute("title");
+  }
+}
+
 function renderStarterState() {
   chatLog.innerHTML = `
     <section id="starter-state" class="starter-state">
@@ -101,9 +126,11 @@ function renderChatForSelectedCity() {
   if (!turns.length) {
     renderStarterState();
     renderStarterPrompts();
+    updateDownloadPlanButtonState();
     return;
   }
   turns.forEach((turn) => appendBubble(turn.content, turn.role));
+  updateDownloadPlanButtonState();
 }
 
 function renderMarkdown(markdownText) {
@@ -126,21 +153,26 @@ function setCityMenuOpen(isOpen) {
   cityMenuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
 }
 
-function setSubmittingState(isSubmitting) {
-  sendButton.disabled = isSubmitting;
-  sendButton.classList.toggle("is-loading", isSubmitting);
-  sendButton.textContent = isSubmitting ? "Writing..." : "Ask";
-  downloadPlanButton.disabled = isSubmitting;
-  cityMenuToggle.disabled = isSubmitting;
+function setSubmittingState(submitting) {
+  isSubmitting = submitting;
+  sendButton.disabled = submitting;
+  sendButton.classList.toggle("is-loading", submitting);
+  sendButton.textContent = submitting ? "Writing..." : "Ask";
+  updateDownloadPlanButtonState();
+  cityMenuToggle.disabled = submitting;
   cityButtons.forEach((button) => {
-    button.disabled = isSubmitting;
+    button.disabled = submitting;
   });
   cityMenuItems.forEach((item) => {
-    item.disabled = isSubmitting;
+    item.disabled = submitting;
   });
 }
 
 function openPlanPremiumInterstitial() {
+  if (!canDownloadPlanForActiveChat()) {
+    updateDownloadPlanButtonState();
+    return;
+  }
   setPlanModalOpen(true);
 }
 
@@ -327,7 +359,15 @@ if (cityButtons[0]) {
   setCityMenuOpen(false);
 }
 
-downloadPlanButton.addEventListener("click", openPlanPremiumInterstitial);
+updateDownloadPlanButtonState();
+
+downloadPlanButton.addEventListener("click", () => {
+  if (!canDownloadPlanForActiveChat()) {
+    updateDownloadPlanButtonState();
+    return;
+  }
+  openPlanPremiumInterstitial();
+});
 cityMenuToggle.addEventListener("click", () => {
   setCityMenuOpen(!cityMenuPanel.classList.contains("is-open"));
 });
