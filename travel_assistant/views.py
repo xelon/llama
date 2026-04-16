@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone as dt_timezone
+from urllib import error as urlerror, request as urlrequest
 
 from django.conf import settings
 from django.core import signing
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 SUBSCRIPTION_COOKIE_NAME = "llama_subscription_access"
 SUBSCRIPTION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 ACTIVE_SUBSCRIPTION_STATUSES = {"active", "trialing"}
+RESTORE_TOKEN_SALT = "llama_restore_access"
 
 
 def _normalized_email(raw_email):
@@ -83,6 +85,54 @@ def _set_subscription_cookie(response, email):
     )
 
 
+def _build_restore_token(email):
+    return signing.dumps({"email": email, "purpose": "restore_access"}, salt=RESTORE_TOKEN_SALT)
+
+
+def _read_restore_token(token):
+    try:
+        payload = signing.loads(
+            token,
+            max_age=settings.MAGIC_LINK_EXPIRY_SECONDS,
+            salt=RESTORE_TOKEN_SALT,
+        )
+    except signing.BadSignature:
+        return ""
+    if payload.get("purpose") != "restore_access":
+        return ""
+    return _normalized_email(payload.get("email"))
+
+
+def _send_restore_email(email, restore_url):
+    if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
+        return False
+    payload = {
+        "from": settings.RESEND_FROM_EMAIL,
+        "to": [email],
+        "subject": "Restore your Llama subscription access",
+        "html": (
+            "<p>Use this secure link to restore subscription access on this browser:</p>"
+            f"<p><a href=\"{restore_url}\">Restore access</a></p>"
+            f"<p>This link expires in {settings.MAGIC_LINK_EXPIRY_SECONDS // 60} minutes.</p>"
+        ),
+    }
+    req = urlrequest.Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=10):
+            return True
+    except (urlerror.URLError, TimeoutError):
+        logger.exception("Failed to send restore email to %s", email)
+        return False
+
+
 def _read_subscription_email_from_cookie(request):
     signed_token = request.COOKIES.get(SUBSCRIPTION_COOKIE_NAME)
     if not signed_token:
@@ -108,6 +158,13 @@ def _has_download_access(request, payload):
     if not access:
         return False
     return _is_active_subscription_status(access.subscription_status)
+
+
+def _subscriber_access_from_request(request):
+    email = _read_subscription_email_from_cookie(request)
+    if not email:
+        return None
+    return SubscriberAccess.objects.filter(email=email).first()
 
 
 @require_GET
@@ -325,13 +382,35 @@ def create_checkout_session_api(request):
     return JsonResponse({"checkoutUrl": checkout_session.url})
 
 
+@require_POST
+def request_restore_link_api(request):
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid request format."}, status=400)
+
+    email = _normalized_email(payload.get("email"))
+    if not email:
+        return JsonResponse({"error": "Email is required."}, status=400)
+
+    access = SubscriberAccess.objects.filter(email=email).first()
+    if not access or not _is_active_subscription_status(access.subscription_status):
+        return JsonResponse({"action": "checkout_required"})
+
+    token = _build_restore_token(email)
+    restore_url = f"{settings.SITE_URL}/billing/restore/?token={token}"
+    if not _send_restore_email(email, restore_url):
+        return JsonResponse({"error": "Could not send restore link right now."}, status=502)
+    return JsonResponse({"action": "restore_sent"})
+
+
 @require_GET
 def checkout_success(request):
     session_id = (request.GET.get("session_id") or "").strip()
     if not session_id:
-        return redirect("/?checkout=failed")
+        return redirect("/billing/success/?state=failed")
     if not settings.STRIPE_SECRET_KEY:
-        return redirect("/?checkout=failed")
+        return redirect("/billing/success/?state=failed")
 
     stripe_client = _stripe_client()
     try:
@@ -341,7 +420,7 @@ def checkout_success(request):
         )
     except Exception:
         logger.exception("Failed retrieving checkout session %s", session_id)
-        return redirect("/?checkout=failed")
+        return redirect("/billing/success/?state=failed")
 
     customer_details = _safe_get(session, "customer_details", {})
     customer_email = _normalized_email(_safe_get(customer_details, "email", ""))
@@ -359,11 +438,11 @@ def checkout_success(request):
                 session_id,
                 raw_subscription,
             )
-            return redirect("/?checkout=failed")
+            return redirect("/billing/success/?state=failed")
 
     subscription_status = _safe_get(subscription, "status", "")
     if not _is_active_subscription_status(subscription_status):
-        return redirect("/?checkout=processing")
+        return redirect("/billing/success/?state=processing")
 
     try:
         _upsert_subscriber_access(
@@ -379,10 +458,65 @@ def checkout_success(request):
             session_id,
             customer_email,
         )
-        return redirect("/?checkout=failed")
-    response = redirect("/?checkout=success")
+        return redirect("/billing/success/?state=failed")
+    response = redirect("/billing/success/?state=success")
     _set_subscription_cookie(response, customer_email)
     return response
+
+
+@require_GET
+def billing_restore(request):
+    token = (request.GET.get("token") or "").strip()
+    if not token:
+        return redirect("/billing/success/?state=failed")
+    email = _read_restore_token(token)
+    if not email:
+        return redirect("/billing/success/?state=failed")
+
+    access = SubscriberAccess.objects.filter(email=email).first()
+    if not access or not _is_active_subscription_status(access.subscription_status):
+        return redirect("/billing/success/?state=failed")
+
+    response = redirect("/billing/success/?state=success")
+    _set_subscription_cookie(response, email)
+    return response
+
+
+@require_GET
+def billing_success_page(request):
+    state = (request.GET.get("state") or "success").strip().lower()
+    if state not in {"success", "processing", "failed"}:
+        state = "success"
+    access = _subscriber_access_from_request(request)
+    return render(
+        request,
+        "travel_assistant/checkout_success.html",
+        {
+            "state": state,
+            "subscriber_email": access.email if access else "",
+            "can_manage_subscription": bool(access and access.stripe_customer_id),
+        },
+    )
+
+
+@require_GET
+def billing_portal_redirect(request):
+    if not settings.STRIPE_SECRET_KEY:
+        return redirect("/billing/success/?state=failed")
+    access = _subscriber_access_from_request(request)
+    if not access or not access.stripe_customer_id:
+        return redirect("/billing/success/?state=failed")
+
+    stripe_client = _stripe_client()
+    try:
+        session = stripe_client.billing_portal.Session.create(
+            customer=access.stripe_customer_id,
+            return_url=f"{settings.SITE_URL}/billing/success/?state=success",
+        )
+    except Exception:
+        logger.exception("Failed creating billing portal session for customer=%s", access.stripe_customer_id)
+        return redirect("/billing/success/?state=failed")
+    return redirect(_safe_get(session, "url", "/billing/success/?state=failed"))
 
 
 @csrf_exempt

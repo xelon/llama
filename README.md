@@ -69,6 +69,14 @@ Payload:
 
 Stripe webhook endpoint for subscription lifecycle synchronization.
 
+### `POST /api/billing/request-restore-link/`
+
+Requests a magic-link email to restore subscription access on a new browser for existing active subscribers. If the email is unknown/inactive, frontend should continue checkout flow.
+
+### `GET /billing/restore/?token=...`
+
+Consumes a signed restore token, restores subscription cookie for the browser, and redirects to billing success page.
+
 ### `POST /api/plan/pdf/`
 
 Requires an active Stripe subscription (email-linked entitlement) before returning a downloadable PDF.
@@ -86,6 +94,9 @@ Requires an active Stripe subscription (email-linked entitlement) before returni
   - `STRIPE_WEBHOOK_SECRET`
   - `STRIPE_MONTHLY_PRICE_ID`
   - `STRIPE_API_VERSION`
+  - `RESEND_API_KEY`
+  - `RESEND_FROM_EMAIL`
+  - `MAGIC_LINK_EXPIRY_SECONDS` (defaults to `3600`)
 - Database persistence:
   - Set `DATABASE_PATH=/data/db.sqlite3` in production and mount `/data` as persistent volume in Coolify.
   - If unset, local dev defaults to `db.sqlite3` in project root; production defaults to `/data/db.sqlite3`.

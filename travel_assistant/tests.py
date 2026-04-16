@@ -1,6 +1,7 @@
 import json
 from unittest.mock import patch
 
+from django.core import signing
 from django.test import Client, TestCase
 from django.urls import reverse
 
@@ -146,8 +147,12 @@ class BillingApiTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.checkout_url = reverse("create_checkout_session_api")
+        self.restore_request_url = reverse("request_restore_link_api")
         self.webhook_url = reverse("stripe_webhook")
         self.success_url = reverse("checkout_success")
+        self.success_page_url = reverse("billing_success_page")
+        self.portal_url = reverse("billing_portal_redirect")
+        self.restore_url = reverse("billing_restore")
         self.turns = [
             {"role": "user", "content": "Plan one evening in Venice."},
             {"role": "assistant", "content": "Focus on Cannaregio and reserve dinner."},
@@ -204,7 +209,7 @@ class BillingApiTests(TestCase):
         }
         response = self.client.get(f"{self.success_url}?session_id=cs_test_123")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("?checkout=success", response.url)
+        self.assertIn("/billing/success/?state=success", response.url)
         self.assertIn("llama_subscription_access", response.cookies)
         self.assertTrue(
             SubscriberAccess.objects.filter(email="paid@example.com", subscription_status="active").exists()
@@ -225,7 +230,7 @@ class BillingApiTests(TestCase):
         }
         response = self.client.get(f"{self.success_url}?session_id=cs_test_124")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("?checkout=success", response.url)
+        self.assertIn("/billing/success/?state=success", response.url)
         access = SubscriberAccess.objects.get(email="time@example.com")
         self.assertIsNotNone(access.current_period_end)
 
@@ -245,7 +250,7 @@ class BillingApiTests(TestCase):
         }
         response = self.client.get(f"{self.success_url}?session_id=cs_test_125")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("?checkout=success", response.url)
+        self.assertIn("/billing/success/?state=success", response.url)
         access = SubscriberAccess.objects.get(email="expand@example.com")
         self.assertEqual(access.stripe_subscription_id, "sub_125")
 
@@ -268,9 +273,85 @@ class BillingApiTests(TestCase):
         )
         response = self.client.get(f"{self.success_url}?session_id=cs_test_126")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("?checkout=success", response.url)
+        self.assertIn("/billing/success/?state=success", response.url)
         access = SubscriberAccess.objects.get(email="sessionobj@example.com")
         self.assertEqual(access.stripe_subscription_id, "sub_126")
+
+    def test_billing_success_page_renders(self):
+        response = self.client.get(f"{self.success_page_url}?state=success")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Subscription is active.", response.content.decode("utf-8"))
+
+    @patch("travel_assistant.views.settings.RESEND_API_KEY", "re_test_123")
+    @patch("travel_assistant.views.settings.RESEND_FROM_EMAIL", "llama@updates.xelon.it")
+    @patch("travel_assistant.views.urlrequest.urlopen")
+    def test_restore_request_sends_magic_link_for_active_subscriber(self, mocked_urlopen):
+        SubscriberAccess.objects.create(
+            email="restore@example.com",
+            stripe_customer_id="cus_restore",
+            stripe_subscription_id="sub_restore",
+            subscription_status="active",
+        )
+        response = self.client.post(
+            self.restore_request_url,
+            data=json.dumps({"email": "restore@example.com"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["action"], "restore_sent")
+        mocked_urlopen.assert_called_once()
+
+    def test_restore_request_falls_back_to_checkout_for_unknown_email(self):
+        response = self.client.post(
+            self.restore_request_url,
+            data=json.dumps({"email": "unknown@example.com"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["action"], "checkout_required")
+
+    def test_billing_restore_sets_cookie_for_valid_token(self):
+        SubscriberAccess.objects.create(
+            email="restore-ok@example.com",
+            stripe_customer_id="cus_restore_ok",
+            stripe_subscription_id="sub_restore_ok",
+            subscription_status="active",
+        )
+        token = signing.dumps(
+            {"email": "restore-ok@example.com", "purpose": "restore_access"},
+            salt="llama_restore_access",
+        )
+        response = self.client.get(f"{self.restore_url}?token={token}")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/billing/success/?state=success", response.url)
+        self.assertIn("llama_subscription_access", response.cookies)
+
+    def test_billing_restore_rejects_invalid_token(self):
+        token = signing.dumps(
+            {"email": "restore-fail@example.com", "purpose": "wrong"},
+            salt="llama_restore_access",
+        )
+        response = self.client.get(f"{self.restore_url}?token={token}")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/billing/success/?state=failed", response.url)
+
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_billing_portal_redirect_uses_customer_from_cookie(self, mocked_client):
+        SubscriberAccess.objects.create(
+            email="portal@example.com",
+            stripe_customer_id="cus_portal",
+            stripe_subscription_id="sub_portal",
+            subscription_status="active",
+        )
+        token = signing.dumps({"email": "portal@example.com"}, salt="llama_subscription_access")
+        self.client.cookies["llama_subscription_access"] = token
+        mocked_client.return_value.billing_portal.Session.create.return_value = {
+            "url": "https://billing.stripe.test/session",
+        }
+        response = self.client.get(self.portal_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "https://billing.stripe.test/session")
 
     @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
     @patch("travel_assistant.views.settings.STRIPE_WEBHOOK_SECRET", "whsec_123")

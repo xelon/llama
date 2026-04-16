@@ -223,10 +223,31 @@ async function startSubscriptionCheckout() {
     setPlanModalStatus("Enter a valid email to continue to checkout.", true);
     return;
   }
-  setPlanModalStatus("Preparing secure checkout...");
+  setPlanModalStatus("Checking subscription access...");
   setStoredSubscriberEmail(email);
   startSubscriptionButton.disabled = true;
   try {
+    const restoreResponse = await fetch("/api/billing/request-restore-link/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken(),
+      },
+      body: JSON.stringify({ email }),
+    });
+    const restorePayload = await restoreResponse.json();
+    if (!restoreResponse.ok) {
+      throw new Error(restorePayload.error || "Could not check restore access right now.");
+    }
+    if (restorePayload.action === "restore_sent") {
+      setPlanModalStatus("We emailed you a secure magic link to restore access on this browser.");
+      return;
+    }
+    if (restorePayload.action !== "checkout_required") {
+      throw new Error("Unexpected restore response.");
+    }
+
+    setPlanModalStatus("Preparing secure checkout...");
     const response = await fetch("/api/billing/create-checkout-session/", {
       method: "POST",
       headers: {
