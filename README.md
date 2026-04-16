@@ -32,6 +32,25 @@ The home page includes a polished city selector and a chat interface backed by O
 
 5. Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
+## Subscriber data (admin CRUD)
+
+Subscription rows live in **`SubscriberAccess`** (SQLite by default). Use Django admin for a full list/add/change/delete UI (staff accounts only):
+
+1. Create a superuser (once per environment):
+   ```bash
+   .venv/bin/python manage.py createsuperuser
+   ```
+2. Open [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/) and sign in.
+3. Under **Travel assistant → Subscriber accesses**, inspect emails, Stripe IDs, and status after deploys or webhooks.
+
+If rows disappear after each deploy, the database file is not on persistent storage: confirm Coolify mounts `/data` (or your `DATABASE_PATH` directory) and run:
+
+```bash
+.venv/bin/python manage.py print_database_path
+```
+
+The printed path should point inside that mounted volume in production.
+
 ## API
 
 ### `POST /api/chat/`
