@@ -18,7 +18,7 @@ The home page includes a polished city selector and a chat interface backed by O
    ```bash
    cp .env.example .env
    ```
-   Then set `OPENAI_API_KEY` in `.env`.
+   Then set `OPENAI_API_KEY` and Stripe billing keys in `.env`.
 
 3. Run migrations:
    ```bash
@@ -49,9 +49,44 @@ Supported `city` values:
 - `venice`
 - `cork`
 
+### `POST /api/billing/create-checkout-session/`
+
+Starts a hosted Stripe Checkout Session for the monthly subscription.
+
+Payload:
+```json
+{
+  "city": "venice",
+  "email": "traveler@example.com",
+  "conversationTurns": [
+    {"role": "user", "content": "Plan one evening in Venice."},
+    {"role": "assistant", "content": "Focus on Cannaregio and reserve dinner."}
+  ]
+}
+```
+
+### `POST /api/billing/webhook/`
+
+Stripe webhook endpoint for subscription lifecycle synchronization.
+
+### `POST /api/plan/pdf/`
+
+Requires an active Stripe subscription (email-linked entitlement) before returning a downloadable PDF.
+
 ## Notes
 
 - Default model is `gpt-4.1-nano` for faster responses (override with `OPENAI_MODEL` in `.env`).
 - The MVP is intentionally stateless (chat history is not persisted).
 - Chat responses are streamed token-by-token and rendered with Markdown formatting.
-- `Download Plan` opens a preview modal and saves a server-generated PDF summary of the full chat session.
+- `Download Plan` is gated by hosted Stripe Checkout in subscription mode and returns PDFs only for active/trialing subscribers.
+- Recommended Stripe API version is `2026-01-28.clover` (default in `.env.example`).
+- Required billing environment variables:
+  - `SITE_URL`
+  - `STRIPE_SECRET_KEY`
+  - `STRIPE_WEBHOOK_SECRET`
+  - `STRIPE_MONTHLY_PRICE_ID`
+  - `STRIPE_API_VERSION`
+- Local webhook forwarding example:
+  ```bash
+  stripe listen --forward-to http://127.0.0.1:8000/api/billing/webhook/
+  ```

@@ -5,6 +5,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from travel_assistant.constants import MAX_PROMPT_LENGTH
+from travel_assistant.models import SubscriberAccess
 
 
 class ChatApiTests(TestCase):
@@ -101,12 +102,134 @@ class PlanExportApiTests(TestCase):
 
     @patch("travel_assistant.views._build_plan_summary")
     def test_plan_pdf_success(self, mocked_summary):
+        SubscriberAccess.objects.create(
+            email="subscriber@example.com",
+            subscription_status="active",
+            stripe_customer_id="cus_123",
+            stripe_subscription_id="sub_123",
+        )
         mocked_summary.return_value = self.summary
         response = self.client.post(
             self.pdf_url,
-            data=json.dumps({"city": "venice", "conversationTurns": self.turns}),
+            data=json.dumps(
+                {
+                    "city": "venice",
+                    "conversationTurns": self.turns,
+                    "subscriberEmail": "subscriber@example.com",
+                }
+            ),
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn("attachment;", response["Content-Disposition"])
+
+    def test_plan_pdf_rejects_without_subscription(self):
+        response = self.client.post(
+            self.pdf_url,
+            data=json.dumps({"city": "venice", "conversationTurns": self.turns}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Active subscription required", response.json()["error"])
+
+
+class BillingApiTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.checkout_url = reverse("create_checkout_session_api")
+        self.webhook_url = reverse("stripe_webhook")
+        self.success_url = reverse("checkout_success")
+        self.turns = [
+            {"role": "user", "content": "Plan one evening in Venice."},
+            {"role": "assistant", "content": "Focus on Cannaregio and reserve dinner."},
+        ]
+
+    @patch("travel_assistant.views.settings.STRIPE_MONTHLY_PRICE_ID", "price_123")
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_create_checkout_session_success(self, mocked_client):
+        mocked_client.return_value.checkout.Session.create.return_value.url = "https://checkout.stripe.test/session"
+        response = self.client.post(
+            self.checkout_url,
+            data=json.dumps(
+                {
+                    "city": "venice",
+                    "conversationTurns": self.turns,
+                    "email": "person@example.com",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["checkoutUrl"], "https://checkout.stripe.test/session")
+
+    @patch("travel_assistant.views.settings.STRIPE_MONTHLY_PRICE_ID", "")
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "")
+    def test_create_checkout_session_requires_config(self):
+        response = self.client.post(
+            self.checkout_url,
+            data=json.dumps(
+                {
+                    "city": "venice",
+                    "conversationTurns": self.turns,
+                    "email": "person@example.com",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("not configured", response.json()["error"])
+
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_checkout_success_sets_cookie_and_persists_access(self, mocked_client):
+        mocked_client.return_value.checkout.Session.retrieve.return_value = {
+            "customer": "cus_123",
+            "customer_details": {"email": "paid@example.com"},
+            "subscription": {
+                "id": "sub_123",
+                "status": "active",
+                "current_period_end": None,
+            },
+            "metadata": {"email": "paid@example.com"},
+        }
+        response = self.client.get(f"{self.success_url}?session_id=cs_test_123")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("?checkout=success", response.url)
+        self.assertIn("llama_subscription_access", response.cookies)
+        self.assertTrue(
+            SubscriberAccess.objects.filter(email="paid@example.com", subscription_status="active").exists()
+        )
+
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views.settings.STRIPE_WEBHOOK_SECRET", "whsec_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_webhook_updates_subscription(self, mocked_client):
+        mocked_client.return_value.Webhook.construct_event.return_value = {
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_123",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "current_period_end": None,
+                    "metadata": {"email": "paid@example.com"},
+                }
+            },
+        }
+        response = self.client.post(
+            self.webhook_url,
+            data=json.dumps({"id": "evt_123"}),
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="sig",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            SubscriberAccess.objects.filter(
+                email="paid@example.com",
+                stripe_customer_id="cus_123",
+                stripe_subscription_id="sub_123",
+                subscription_status="active",
+            ).exists()
+        )

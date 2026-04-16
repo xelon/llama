@@ -13,11 +13,14 @@ const downloadPlanButton = document.querySelector("#download-plan-button");
 const planModal = document.querySelector("#plan-modal");
 const closePlanModalButton = document.querySelector("#close-plan-modal");
 const startSubscriptionButton = document.querySelector("#start-subscription");
+const subscriptionEmailInput = document.querySelector("#subscription-email");
+const planModalStatus = document.querySelector("#plan-modal-status");
 const cityMenuToggle = document.querySelector("#city-menu-toggle");
 const cityMenuPanel = document.querySelector("#city-menu-panel");
 const cityMenuItems = Array.from(document.querySelectorAll(".city-menu-item"));
 const cityOptions = JSON.parse(document.querySelector("#city-options-data").textContent);
 const CHAT_STORAGE_KEY = "llama_city_conversations_v1";
+const SUBSCRIBER_EMAIL_STORAGE_KEY = "llama_subscriber_email_v1";
 
 let selectedCity = cityButtons[0]?.dataset.city || "san-francisco";
 let cityConversations = {};
@@ -145,6 +148,124 @@ function renderMarkdown(markdownText) {
 
 function setPlanModalOpen(isOpen) {
   planModal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+}
+
+function setPlanModalStatus(message, hasError = false) {
+  if (!planModalStatus) {
+    return;
+  }
+  planModalStatus.textContent = message || "";
+  planModalStatus.classList.toggle("is-error", hasError);
+}
+
+function getStoredSubscriberEmail() {
+  try {
+    return localStorage.getItem(SUBSCRIBER_EMAIL_STORAGE_KEY) || "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function setStoredSubscriberEmail(email) {
+  try {
+    localStorage.setItem(SUBSCRIBER_EMAIL_STORAGE_KEY, email);
+  } catch (_error) {
+    // Ignore storage errors.
+  }
+}
+
+function getDownloadPayload() {
+  return {
+    city: selectedCity,
+    conversationTurns: getConversation(selectedCity),
+    subscriberEmail: (subscriptionEmailInput?.value || "").trim().toLowerCase(),
+  };
+}
+
+async function requestPlanPdfDownload() {
+  const response = await fetch("/api/plan/pdf/", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken(),
+    },
+    body: JSON.stringify(getDownloadPayload()),
+  });
+  if (!response.ok) {
+    let errorMessage = "Could not download plan right now.";
+    try {
+      const payload = await response.json();
+      if (payload.error) {
+        errorMessage = payload.error;
+      }
+    } catch (_error) {
+      // Keep fallback message.
+    }
+    const statusError = new Error(errorMessage);
+    statusError.status = response.status;
+    throw statusError;
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  const safeCity = (selectedCity || "trip").replace(/[^a-z-]/g, "");
+  anchor.download = `llama-plan-${safeCity}.pdf`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+async function startSubscriptionCheckout() {
+  const email = (subscriptionEmailInput?.value || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    setPlanModalStatus("Enter a valid email to continue to checkout.", true);
+    return;
+  }
+  setPlanModalStatus("Preparing secure checkout...");
+  setStoredSubscriberEmail(email);
+  startSubscriptionButton.disabled = true;
+  try {
+    const response = await fetch("/api/billing/create-checkout-session/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrfToken(),
+      },
+      body: JSON.stringify({
+        city: selectedCity,
+        conversationTurns: getConversation(selectedCity),
+        email,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.checkoutUrl) {
+      throw new Error(payload.error || "Could not start checkout right now.");
+    }
+    window.location.href = payload.checkoutUrl;
+  } catch (error) {
+    setPlanModalStatus(error.message || "Could not start checkout right now.", true);
+  } finally {
+    startSubscriptionButton.disabled = false;
+  }
+}
+
+function applyCheckoutReturnState() {
+  const params = new URLSearchParams(window.location.search);
+  const checkoutState = params.get("checkout");
+  if (!checkoutState) {
+    return;
+  }
+  if (checkoutState === "success") {
+    errorLine.textContent = "Subscription active. You can now download your plan.";
+  } else if (checkoutState === "cancelled") {
+    errorLine.textContent = "Checkout cancelled. Start subscription anytime to unlock downloads.";
+  } else if (checkoutState === "processing") {
+    errorLine.textContent = "Checkout complete. Subscription is processing; try downloading again in a few seconds.";
+  } else if (checkoutState === "failed") {
+    errorLine.textContent = "Checkout verification failed. Please try again.";
+  }
 }
 
 function setCityMenuOpen(isOpen) {
@@ -359,26 +480,41 @@ if (cityButtons[0]) {
   setCityMenuOpen(false);
 }
 
+if (subscriptionEmailInput) {
+  subscriptionEmailInput.value = getStoredSubscriberEmail();
+}
+applyCheckoutReturnState();
+
 updateDownloadPlanButtonState();
 
-downloadPlanButton.addEventListener("click", () => {
+downloadPlanButton.addEventListener("click", async () => {
   if (!canDownloadPlanForActiveChat()) {
     updateDownloadPlanButtonState();
     return;
   }
-  openPlanPremiumInterstitial();
+  try {
+    await requestPlanPdfDownload();
+  } catch (error) {
+    if (error.status === 403) {
+      setPlanModalStatus("Subscription required before download.");
+      openPlanPremiumInterstitial();
+      return;
+    }
+    errorLine.textContent = error.message || "Could not download plan right now.";
+  }
 });
 cityMenuToggle.addEventListener("click", () => {
   setCityMenuOpen(!cityMenuPanel.classList.contains("is-open"));
 });
-closePlanModalButton.addEventListener("click", () => setPlanModalOpen(false));
-startSubscriptionButton.addEventListener("click", () => {
+closePlanModalButton.addEventListener("click", () => {
   setPlanModalOpen(false);
-  errorLine.textContent = "Subscriptions are coming soon.";
+  setPlanModalStatus("");
 });
+startSubscriptionButton.addEventListener("click", startSubscriptionCheckout);
 planModal.addEventListener("click", (event) => {
   if (event.target.dataset.closeModal === "true") {
     setPlanModalOpen(false);
+    setPlanModalStatus("");
   }
 });
 document.addEventListener("click", (event) => {

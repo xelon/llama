@@ -601,6 +601,26 @@ button.is-loading::after {
   padding: 0;
 }
 
+.plan-modal__dialog input[type="email"] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.72rem 0.86rem;
+  font: inherit;
+  background: var(--surface);
+}
+
+.plan-modal-status {
+  min-height: 1.2rem;
+  margin: -0.25rem 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.plan-modal-status.is-error {
+  color: oklch(0.53 0.17 30);
+}
+
 .bubble-assistant.is-streaming::after {
   content: "";
   display: inline-block;
