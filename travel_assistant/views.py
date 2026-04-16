@@ -335,18 +335,38 @@ def checkout_success(request):
     customer_email = _normalized_email((session.get("customer_details") or {}).get("email"))
     if not customer_email:
         customer_email = _normalized_email(session.get("metadata", {}).get("email"))
-    subscription = session.get("subscription") or {}
+    raw_subscription = session.get("subscription")
+    subscription = raw_subscription if hasattr(raw_subscription, "get") else {}
+    if not subscription and isinstance(raw_subscription, str):
+        try:
+            subscription = stripe_client.Subscription.retrieve(raw_subscription)
+        except Exception:
+            logger.exception(
+                "Failed retrieving expanded subscription for session_id=%s subscription_id=%s",
+                session_id,
+                raw_subscription,
+            )
+            return redirect("/?checkout=failed")
+
     subscription_status = subscription.get("status", "")
     if not _is_active_subscription_status(subscription_status):
         return redirect("/?checkout=processing")
 
-    _upsert_subscriber_access(
-        email=customer_email,
-        customer_id=session.get("customer"),
-        subscription_id=subscription.get("id"),
-        subscription_status=subscription_status,
-        current_period_end=_period_end_from_unix(subscription.get("current_period_end")),
-    )
+    try:
+        _upsert_subscriber_access(
+            email=customer_email,
+            customer_id=session.get("customer"),
+            subscription_id=subscription.get("id"),
+            subscription_status=subscription_status,
+            current_period_end=_period_end_from_unix(subscription.get("current_period_end")),
+        )
+    except Exception:
+        logger.exception(
+            "Failed persisting subscriber access for session_id=%s email=%s",
+            session_id,
+            customer_email,
+        )
+        return redirect("/?checkout=failed")
     response = redirect("/?checkout=success")
     _set_subscription_cookie(response, customer_email)
     return response
