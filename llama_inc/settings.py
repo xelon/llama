@@ -27,9 +27,15 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = 'django-insecure-pb&@e_=rnjoan1j5)2l6z8)u+0+i#n!o4_r86ou)zr2rt1-5o@'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False").lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = []
+default_allowed_hosts = ["127.0.0.1", "localhost", "llama.xelon.it"]
+allowed_hosts_env = os.getenv("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in (allowed_hosts_env.split(",") if allowed_hosts_env else default_allowed_hosts)
+    if host.strip()
+]
 
 
 # Application definition
