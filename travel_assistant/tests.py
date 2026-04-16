@@ -250,6 +250,29 @@ class BillingApiTests(TestCase):
         self.assertEqual(access.stripe_subscription_id, "sub_125")
 
     @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_checkout_success_handles_stripe_like_session_object(self, mocked_client):
+        mocked_client.return_value.checkout.Session.retrieve.return_value = StripeLikeObject(
+            {
+                "customer": "cus_126",
+                "customer_details": StripeLikeObject({"email": "sessionobj@example.com"}),
+                "subscription": StripeLikeObject(
+                    {
+                        "id": "sub_126",
+                        "status": "active",
+                        "current_period_end": 1777000000,
+                    }
+                ),
+                "metadata": StripeLikeObject({"email": "sessionobj@example.com"}),
+            }
+        )
+        response = self.client.get(f"{self.success_url}?session_id=cs_test_126")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("?checkout=success", response.url)
+        access = SubscriberAccess.objects.get(email="sessionobj@example.com")
+        self.assertEqual(access.stripe_subscription_id, "sub_126")
+
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
     @patch("travel_assistant.views.settings.STRIPE_WEBHOOK_SECRET", "whsec_123")
     @patch("travel_assistant.views._stripe_client")
     def test_webhook_updates_subscription(self, mocked_client):

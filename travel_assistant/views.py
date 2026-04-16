@@ -343,11 +343,13 @@ def checkout_success(request):
         logger.exception("Failed retrieving checkout session %s", session_id)
         return redirect("/?checkout=failed")
 
-    customer_email = _normalized_email((session.get("customer_details") or {}).get("email"))
+    customer_details = _safe_get(session, "customer_details", {})
+    customer_email = _normalized_email(_safe_get(customer_details, "email", ""))
     if not customer_email:
-        customer_email = _normalized_email(session.get("metadata", {}).get("email"))
-    raw_subscription = session.get("subscription")
-    subscription = raw_subscription if hasattr(raw_subscription, "get") else {}
+        metadata = _safe_get(session, "metadata", {})
+        customer_email = _normalized_email(_safe_get(metadata, "email", ""))
+    raw_subscription = _safe_get(session, "subscription")
+    subscription = raw_subscription if raw_subscription and not isinstance(raw_subscription, str) else {}
     if not subscription and isinstance(raw_subscription, str):
         try:
             subscription = stripe_client.Subscription.retrieve(raw_subscription)
@@ -359,17 +361,17 @@ def checkout_success(request):
             )
             return redirect("/?checkout=failed")
 
-    subscription_status = subscription.get("status", "")
+    subscription_status = _safe_get(subscription, "status", "")
     if not _is_active_subscription_status(subscription_status):
         return redirect("/?checkout=processing")
 
     try:
         _upsert_subscriber_access(
             email=customer_email,
-            customer_id=session.get("customer"),
-            subscription_id=subscription.get("id"),
+            customer_id=_safe_get(session, "customer"),
+            subscription_id=_safe_get(subscription, "id"),
             subscription_status=subscription_status,
-            current_period_end=_period_end_from_unix(subscription.get("current_period_end")),
+            current_period_end=_period_end_from_unix(_safe_get(subscription, "current_period_end")),
         )
     except Exception:
         logger.exception(
