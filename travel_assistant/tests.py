@@ -240,7 +240,7 @@ class BillingApiTests(TestCase):
         }
         response = self.client.get(f"{self.success_url}?session_id=cs_test_123")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/billing/success/?state=success", response.url)
+        self.assertIn("subscription=success", response.url)
         self.assertIn("llama_subscription_access", response.cookies)
         self.assertTrue(
             SubscriberAccess.objects.filter(email="paid@example.com", subscription_status="active").exists()
@@ -261,7 +261,7 @@ class BillingApiTests(TestCase):
         }
         response = self.client.get(f"{self.success_url}?session_id=cs_test_124")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/billing/success/?state=success", response.url)
+        self.assertIn("subscription=success", response.url)
         access = SubscriberAccess.objects.get(email="time@example.com")
         self.assertIsNotNone(access.current_period_end)
 
@@ -281,7 +281,7 @@ class BillingApiTests(TestCase):
         }
         response = self.client.get(f"{self.success_url}?session_id=cs_test_125")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/billing/success/?state=success", response.url)
+        self.assertIn("subscription=success", response.url)
         access = SubscriberAccess.objects.get(email="expand@example.com")
         self.assertEqual(access.stripe_subscription_id, "sub_125")
 
@@ -304,15 +304,15 @@ class BillingApiTests(TestCase):
         )
         response = self.client.get(f"{self.success_url}?session_id=cs_test_126")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/billing/success/?state=success", response.url)
+        self.assertIn("subscription=success", response.url)
         access = SubscriberAccess.objects.get(email="sessionobj@example.com")
         self.assertEqual(access.stripe_subscription_id, "sub_126")
         self.assertEqual(access.stripe_customer_id, "cus_126")
 
-    def test_billing_success_page_renders(self):
+    def test_billing_success_legacy_path_redirects_home(self):
         response = self.client.get(f"{self.success_page_url}?state=success")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("Subscription is active.", response.content.decode("utf-8"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("subscription=success", response.url)
 
     @patch("travel_assistant.views.settings.RESEND_API_KEY", "re_test_123")
     @patch("travel_assistant.views.settings.RESEND_FROM_EMAIL", "llama@updates.xelon.it")
@@ -355,7 +355,7 @@ class BillingApiTests(TestCase):
         )
         response = self.client.get(f"{self.restore_url}?token={token}")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/billing/success/?state=success", response.url)
+        self.assertIn("subscription=success", response.url)
         self.assertIn("llama_subscription_access", response.cookies)
 
     def test_billing_restore_rejects_invalid_token(self):
@@ -365,7 +365,7 @@ class BillingApiTests(TestCase):
         )
         response = self.client.get(f"{self.restore_url}?token={token}")
         self.assertEqual(response.status_code, 302)
-        self.assertIn("/billing/success/?state=failed", response.url)
+        self.assertIn("subscription=failed", response.url)
 
     @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
     @patch("travel_assistant.views._stripe_client")
@@ -404,7 +404,7 @@ class BillingApiTests(TestCase):
         self.assertEqual(response.url, "https://billing.stripe.test/session-json")
         mocked_client.return_value.billing_portal.Session.create.assert_called_once_with(
             customer="cus_json_123",
-            return_url="http://127.0.0.1:8000/billing/success/?state=success",
+            return_url="http://127.0.0.1:8000/?subscription=success",
         )
 
     @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")

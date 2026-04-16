@@ -21,6 +21,8 @@ const cityMenuItems = Array.from(document.querySelectorAll(".city-menu-item"));
 const cityOptions = JSON.parse(document.querySelector("#city-options-data").textContent);
 const CHAT_STORAGE_KEY = "llama_city_conversations_v1";
 const SUBSCRIBER_EMAIL_STORAGE_KEY = "llama_subscriber_email_v1";
+const LAST_CITY_SLUG_KEY = "llama_last_city_slug_v1";
+const toastEl = document.querySelector("#toast");
 
 let selectedCity = cityButtons[0]?.dataset.city || "san-francisco";
 let cityConversations = {};
@@ -174,6 +176,98 @@ function setStoredSubscriberEmail(email) {
   }
 }
 
+function saveLastSelectedCity(slug) {
+  const city = slug || selectedCity;
+  if (!city || !cityOptions[city]) {
+    return;
+  }
+  try {
+    localStorage.setItem(LAST_CITY_SLUG_KEY, city);
+  } catch (_error) {
+    // Ignore storage errors.
+  }
+}
+
+function showToast(message) {
+  if (!toastEl || !message) {
+    return;
+  }
+  toastEl.textContent = message;
+  toastEl.hidden = false;
+  toastEl.classList.add("is-visible");
+  clearTimeout(showToast._hideTimer);
+  showToast._hideTimer = window.setTimeout(() => {
+    toastEl.classList.remove("is-visible");
+    toastEl.hidden = true;
+  }, 4200);
+}
+
+function stripBillingQueryParamsFromUrl() {
+  const url = new URL(window.location.href);
+  let changed = false;
+  ["subscription", "checkout"].forEach((key) => {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  });
+  if (!changed) {
+    return;
+  }
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState({}, "", next);
+}
+
+function restorePlannerAfterBillingReturn() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.get("subscription") && !params.get("checkout")) {
+    return;
+  }
+  let slug = "";
+  try {
+    slug = localStorage.getItem(LAST_CITY_SLUG_KEY) || "";
+  } catch (_error) {
+    return;
+  }
+  if (!slug || !cityOptions[slug]) {
+    return;
+  }
+  const pill = cityButtons.find((b) => b.dataset.city === slug);
+  const item = cityMenuItems.find((b) => b.dataset.city === slug);
+  const btn = pill || item;
+  if (btn) {
+    setActiveCity(btn, { collapseSelector: true });
+  }
+}
+
+function applyBillingReturnFeedback() {
+  const params = new URLSearchParams(window.location.search);
+  const subscription = (params.get("subscription") || "").toLowerCase();
+  const checkout = (params.get("checkout") || "").toLowerCase();
+  let toastMessage = "";
+
+  if (subscription === "success") {
+    toastMessage = "Subscription is active.";
+  } else if (subscription === "processing") {
+    toastMessage = "Subscription is processing. Try downloading again in a few seconds.";
+  } else if (subscription === "failed") {
+    toastMessage = "We could not verify the subscription. Please try again.";
+  } else if (checkout === "cancelled") {
+    toastMessage = "Checkout was cancelled.";
+  } else if (checkout === "success") {
+    toastMessage = "Subscription is active.";
+  } else if (checkout === "processing") {
+    toastMessage = "Subscription is processing. Try downloading again in a few seconds.";
+  } else if (checkout === "failed") {
+    toastMessage = "We could not verify the subscription. Please try again.";
+  }
+
+  if (toastMessage) {
+    showToast(toastMessage);
+    stripBillingQueryParamsFromUrl();
+  }
+}
+
 function getDownloadPayload() {
   return {
     city: selectedCity,
@@ -264,28 +358,12 @@ async function startSubscriptionCheckout() {
     if (!response.ok || !payload.checkoutUrl) {
       throw new Error(payload.error || "Could not start checkout right now.");
     }
+    saveLastSelectedCity(selectedCity);
     window.location.href = payload.checkoutUrl;
   } catch (error) {
     setPlanModalStatus(error.message || "Could not start checkout right now.", true);
   } finally {
     startSubscriptionButton.disabled = false;
-  }
-}
-
-function applyCheckoutReturnState() {
-  const params = new URLSearchParams(window.location.search);
-  const checkoutState = params.get("checkout");
-  if (!checkoutState) {
-    return;
-  }
-  if (checkoutState === "success") {
-    errorLine.textContent = "Subscription active. You can now download your plan.";
-  } else if (checkoutState === "cancelled") {
-    errorLine.textContent = "Checkout cancelled. Start subscription anytime to unlock downloads.";
-  } else if (checkoutState === "processing") {
-    errorLine.textContent = "Checkout complete. Subscription is processing; try downloading again in a few seconds.";
-  } else if (checkoutState === "failed") {
-    errorLine.textContent = "Checkout verification failed. Please try again.";
   }
 }
 
@@ -483,6 +561,7 @@ function setActiveCity(button, options = { collapseSelector: false }) {
     planner.classList.add("is-focused");
   }
   setCityMenuOpen(false);
+  saveLastSelectedCity(button.dataset.city);
   renderChatForSelectedCity();
 }
 
@@ -499,12 +578,13 @@ if (cityButtons[0]) {
   selectedCity = null;
   planner.classList.add("is-gated");
   setCityMenuOpen(false);
+  restorePlannerAfterBillingReturn();
 }
 
 if (subscriptionEmailInput) {
   subscriptionEmailInput.value = getStoredSubscriberEmail();
 }
-applyCheckoutReturnState();
+applyBillingReturnFeedback();
 
 updateDownloadPlanButtonState();
 

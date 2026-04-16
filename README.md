@@ -94,7 +94,11 @@ Requests a magic-link email to restore subscription access on a new browser for 
 
 ### `GET /billing/restore/?token=...`
 
-Consumes a signed restore token, restores subscription cookie for the browser, and redirects to billing success page.
+Consumes a signed restore token, restores subscription cookie for the browser, and redirects to the planner with `?subscription=success` (toast on the home page).
+
+### `GET /billing/success/?state=...`
+
+Legacy URL kept for bookmarks and external links; responds with **302** to `/?subscription=...` (same query states as checkout completion).
 
 ### `POST /api/plan/pdf/`
 

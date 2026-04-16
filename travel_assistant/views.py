@@ -100,6 +100,13 @@ def _set_subscription_cookie(response, email):
     )
 
 
+def _home_subscription_redirect(state: str):
+    normalized = (state or "failed").strip().lower()
+    if normalized not in {"success", "processing", "failed"}:
+        normalized = "failed"
+    return redirect(f"{settings.SITE_URL}/?subscription={normalized}")
+
+
 def _build_restore_token(email):
     return signing.dumps({"email": email, "purpose": "restore_access"}, salt=RESTORE_TOKEN_SALT)
 
@@ -453,9 +460,9 @@ def request_restore_link_api(request):
 def checkout_success(request):
     session_id = (request.GET.get("session_id") or "").strip()
     if not session_id:
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
     if not settings.STRIPE_SECRET_KEY:
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
 
     stripe_client = _stripe_client()
     try:
@@ -465,7 +472,7 @@ def checkout_success(request):
         )
     except Exception:
         logger.exception("Failed retrieving checkout session %s", session_id)
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
 
     customer_details = _safe_get(session, "customer_details", {})
     customer_email = _normalized_email(_safe_get(customer_details, "email", ""))
@@ -483,11 +490,11 @@ def checkout_success(request):
                 session_id,
                 raw_subscription,
             )
-            return redirect("/billing/success/?state=failed")
+            return _home_subscription_redirect("failed")
 
     subscription_status = _safe_get(subscription, "status", "")
     if not _is_active_subscription_status(subscription_status):
-        return redirect("/billing/success/?state=processing")
+        return _home_subscription_redirect("processing")
 
     try:
         _upsert_subscriber_access(
@@ -503,8 +510,8 @@ def checkout_success(request):
             session_id,
             customer_email,
         )
-        return redirect("/billing/success/?state=failed")
-    response = redirect("/billing/success/?state=success")
+        return _home_subscription_redirect("failed")
+    response = _home_subscription_redirect("success")
     _set_subscription_cookie(response, customer_email)
     return response
 
@@ -513,16 +520,16 @@ def checkout_success(request):
 def billing_restore(request):
     token = (request.GET.get("token") or "").strip()
     if not token:
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
     email = _read_restore_token(token)
     if not email:
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
 
     access = SubscriberAccess.objects.filter(email=email).first()
     if not access or not _is_active_subscription_status(access.subscription_status):
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
 
-    response = redirect("/billing/success/?state=success")
+    response = _home_subscription_redirect("success")
     _set_subscription_cookie(response, email)
     return response
 
@@ -532,37 +539,28 @@ def billing_success_page(request):
     state = (request.GET.get("state") or "success").strip().lower()
     if state not in {"success", "processing", "failed"}:
         state = "success"
-    access = _subscriber_access_from_request(request)
-    return render(
-        request,
-        "travel_assistant/checkout_success.html",
-        {
-            "state": state,
-            "subscriber_email": access.email if access else "",
-            "can_manage_subscription": bool(access and access.stripe_customer_id),
-        },
-    )
+    return _home_subscription_redirect(state)
 
 
 @require_GET
 def billing_portal_redirect(request):
     if not settings.STRIPE_SECRET_KEY:
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
     access = _subscriber_access_from_request(request)
     customer_id = _stripe_object_id(access.stripe_customer_id) if access else ""
     if not access or not customer_id:
-        return redirect("/billing/success/?state=failed")
+        return _home_subscription_redirect("failed")
 
     stripe_client = _stripe_client()
     try:
         session = stripe_client.billing_portal.Session.create(
             customer=customer_id,
-            return_url=f"{settings.SITE_URL}/billing/success/?state=success",
+            return_url=f"{settings.SITE_URL}/?subscription=success",
         )
     except Exception:
         logger.exception("Failed creating billing portal session for customer=%s", customer_id)
-        return redirect("/billing/success/?state=failed")
-    return redirect(_safe_get(session, "url", "/billing/success/?state=failed"))
+        return _home_subscription_redirect("failed")
+    return redirect(_safe_get(session, "url", f"{settings.SITE_URL}/?subscription=failed"))
 
 
 @csrf_exempt
