@@ -555,7 +555,7 @@ def billing_portal_redirect(request):
     try:
         session = stripe_client.billing_portal.Session.create(
             customer=customer_id,
-            return_url=f"{settings.SITE_URL}/?subscription=success",
+            return_url=f"{settings.SITE_URL}/?billing=return",
         )
     except Exception:
         logger.exception("Failed creating billing portal session for customer=%s", customer_id)

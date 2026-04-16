@@ -404,7 +404,7 @@ class BillingApiTests(TestCase):
         self.assertEqual(response.url, "https://billing.stripe.test/session-json")
         mocked_client.return_value.billing_portal.Session.create.assert_called_once_with(
             customer="cus_json_123",
-            return_url="http://127.0.0.1:8000/?subscription=success",
+            return_url="http://127.0.0.1:8000/?billing=return",
         )
 
     @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")

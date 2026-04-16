@@ -490,6 +490,20 @@ textarea:focus-visible {
   cursor: help;
 }
 
+#download-plan-button.is-loading[disabled] {
+  cursor: wait;
+  color: var(--ink);
+  border-color: var(--line);
+  background: color-mix(in oklch, var(--surface-2) 65%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--line) 72%, white);
+  min-width: 11.5rem;
+}
+
+#download-plan-button.is-loading::after {
+  margin-left: 0.45rem;
+  background: color-mix(in oklch, var(--accent) 58%, var(--ink));
+}
+
 button[type="submit"] {
   border: none;
   border-radius: 999px;

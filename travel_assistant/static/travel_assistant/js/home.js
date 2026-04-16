@@ -23,10 +23,12 @@ const CHAT_STORAGE_KEY = "llama_city_conversations_v1";
 const SUBSCRIBER_EMAIL_STORAGE_KEY = "llama_subscriber_email_v1";
 const LAST_CITY_SLUG_KEY = "llama_last_city_slug_v1";
 const toastEl = document.querySelector("#toast");
+const DOWNLOAD_PLAN_LABEL_DEFAULT = "Download Plan";
 
 let selectedCity = cityButtons[0]?.dataset.city || "san-francisco";
 let cityConversations = {};
 let isSubmitting = false;
+let isDownloadingPlan = false;
 
 function csrfToken() {
   const input = chatForm.querySelector("input[name=csrfmiddlewaretoken]");
@@ -107,9 +109,24 @@ function canDownloadPlanForActiveChat() {
 }
 
 function updateDownloadPlanButtonState() {
+  if (isDownloadingPlan) {
+    downloadPlanButton.disabled = true;
+    downloadPlanButton.classList.remove("is-disabled");
+    downloadPlanButton.removeAttribute("aria-disabled");
+    downloadPlanButton.classList.add("is-loading");
+    downloadPlanButton.textContent = "Preparing PDF…";
+    downloadPlanButton.setAttribute("aria-busy", "true");
+    downloadPlanButton.removeAttribute("title");
+    return;
+  }
+
+  downloadPlanButton.disabled = false;
+  downloadPlanButton.classList.remove("is-loading");
+  downloadPlanButton.removeAttribute("aria-busy");
   const shouldDisableDownload = !canDownloadPlanForActiveChat();
   downloadPlanButton.classList.toggle("is-disabled", shouldDisableDownload);
   downloadPlanButton.setAttribute("aria-disabled", shouldDisableDownload ? "true" : "false");
+  downloadPlanButton.textContent = DOWNLOAD_PLAN_LABEL_DEFAULT;
   if (shouldDisableDownload && !isSubmitting) {
     downloadPlanButton.title = "Start a chat before downloading the plan.";
   } else {
@@ -202,7 +219,16 @@ function showToast(message) {
   }, 4200);
 }
 
-function stripBillingQueryParamsFromUrl() {
+function hasBillingPlannerReturnParams() {
+  const params = new URLSearchParams(window.location.search);
+  return Boolean(
+    params.get("subscription") ||
+      params.get("checkout") ||
+      params.get("billing") === "return",
+  );
+}
+
+function stripBillingReturnQueryParamsFromUrl() {
   const url = new URL(window.location.href);
   let changed = false;
   ["subscription", "checkout"].forEach((key) => {
@@ -211,6 +237,10 @@ function stripBillingQueryParamsFromUrl() {
       changed = true;
     }
   });
+  if (url.searchParams.get("billing") === "return") {
+    url.searchParams.delete("billing");
+    changed = true;
+  }
   if (!changed) {
     return;
   }
@@ -219,8 +249,7 @@ function stripBillingQueryParamsFromUrl() {
 }
 
 function restorePlannerAfterBillingReturn() {
-  const params = new URLSearchParams(window.location.search);
-  if (!params.get("subscription") && !params.get("checkout")) {
+  if (!hasBillingPlannerReturnParams()) {
     return;
   }
   let slug = "";
@@ -241,6 +270,9 @@ function restorePlannerAfterBillingReturn() {
 }
 
 function applyBillingReturnFeedback() {
+  if (!hasBillingPlannerReturnParams()) {
+    return;
+  }
   const params = new URLSearchParams(window.location.search);
   const subscription = (params.get("subscription") || "").toLowerCase();
   const checkout = (params.get("checkout") || "").toLowerCase();
@@ -264,8 +296,8 @@ function applyBillingReturnFeedback() {
 
   if (toastMessage) {
     showToast(toastMessage);
-    stripBillingQueryParamsFromUrl();
   }
+  stripBillingReturnQueryParamsFromUrl();
 }
 
 function getDownloadPayload() {
@@ -589,10 +621,13 @@ applyBillingReturnFeedback();
 updateDownloadPlanButtonState();
 
 downloadPlanButton.addEventListener("click", async () => {
-  if (!canDownloadPlanForActiveChat()) {
+  if (isDownloadingPlan || !canDownloadPlanForActiveChat()) {
     updateDownloadPlanButtonState();
     return;
   }
+  errorLine.textContent = "";
+  isDownloadingPlan = true;
+  updateDownloadPlanButtonState();
   try {
     await requestPlanPdfDownload();
   } catch (error) {
@@ -602,6 +637,9 @@ downloadPlanButton.addEventListener("click", async () => {
       return;
     }
     errorLine.textContent = error.message || "Could not download plan right now.";
+  } finally {
+    isDownloadingPlan = false;
+    updateDownloadPlanButtonState();
   }
 });
 cityMenuToggle.addEventListener("click", () => {
