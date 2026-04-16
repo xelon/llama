@@ -8,6 +8,11 @@ ENV PORT=8000
 # minimal OS deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl \
+    build-essential \
+    pkg-config \
+    libcairo2-dev \
+    libffi-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

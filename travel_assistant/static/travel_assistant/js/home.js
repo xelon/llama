@@ -28,6 +28,10 @@ function csrfToken() {
 }
 
 function appendBubble(text, who) {
+  const starter = document.querySelector("#starter-state");
+  if (starter) {
+    starter.remove();
+  }
   const bubble = document.createElement("div");
   bubble.className = `bubble ${who === "user" ? "bubble-user" : "bubble-assistant"}`;
   if (who === "assistant") {
