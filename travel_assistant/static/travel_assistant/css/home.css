@@ -34,13 +34,18 @@ body {
   font-size: var(--text-md);
   font-kerning: normal;
   text-rendering: optimizeLegibility;
+  min-height: 100vh;
+  overflow: hidden;
 }
 
 .shell {
   width: min(1100px, 92vw);
-  margin: var(--space-3xl) auto;
+  height: min(100vh, 100svh);
+  margin: 0 auto;
+  padding: var(--space-lg) 0;
   display: grid;
-  gap: var(--space-2xl);
+  grid-template-rows: auto 1fr;
+  gap: var(--space-lg);
 }
 
 .hero {
@@ -61,10 +66,11 @@ body {
 h1 {
   margin: 0;
   font-family: "Spectral", serif;
-  font-size: clamp(var(--text-xl), 3.2vw, var(--text-2xl));
+  font-size: clamp(1.9rem, 2.3vw, 2.6rem);
   line-height: 1.08;
   letter-spacing: -0.01em;
-  max-width: 18ch;
+  max-width: none;
+  white-space: nowrap;
 }
 
 .lede {
@@ -78,6 +84,40 @@ h1 {
   display: grid;
   grid-template-columns: minmax(220px, 300px) 1fr;
   gap: var(--space-xl);
+  min-height: 0;
+}
+
+.planner.is-gated {
+  grid-template-columns: minmax(760px, 980px);
+  justify-content: center;
+}
+
+.planner.is-gated .chat-panel {
+  display: none;
+}
+
+.planner.is-focused {
+  grid-template-columns: 1fr;
+}
+
+.planner.is-focused .city-selector-wrap {
+  display: none;
+}
+
+.city-selector-wrap {
+  min-height: 0;
+}
+
+.planner.is-gated .city-selector-wrap {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in oklch, var(--surface) 92%, white);
+  padding: var(--space-xl);
+}
+
+.planner.is-gated .city-selector {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
 }
 
 .city-selector {
@@ -91,13 +131,45 @@ h1 {
   background: var(--surface);
   color: var(--ink);
   border-radius: 999px;
-  padding: var(--space-md) var(--space-lg);
+  padding: 0.55rem 0.75rem;
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-lg);
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.65rem;
   cursor: pointer;
   transition: background 180ms var(--ease-out-quart), transform 180ms var(--ease-out-quart), border-color 180ms var(--ease-out-quart);
+}
+
+.city-icon {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--line) 78%, var(--accent));
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklch, var(--surface-2) 72%, white);
+  flex: 0 0 auto;
+}
+
+.city-icon svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: color-mix(in oklch, var(--ink) 75%, var(--accent));
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.city-text {
+  display: grid;
+  text-align: left;
+  gap: 0.1rem;
+}
+
+.city-text strong {
+  font-size: 0.93rem;
+  font-weight: 600;
 }
 
 .city-pill:hover {
@@ -113,12 +185,39 @@ h1 {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 0.7rem;
+  font-size: 0.62rem;
 }
 
 .city-pill.is-active {
   background: var(--accent-soft);
   border-color: color-mix(in oklch, var(--accent) 70%, var(--line));
+}
+
+.planner.is-gated .city-pill {
+  border-radius: 14px;
+  padding: 0.9rem;
+  min-height: 112px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.planner.is-gated .city-icon {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.planner.is-gated .city-icon svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.planner.is-gated .city-text strong {
+  font-size: 1.02rem;
+}
+
+.planner.is-gated .city-text small {
+  font-size: 0.66rem;
 }
 
 .chat-panel {
@@ -128,6 +227,7 @@ h1 {
   padding: var(--space-xl);
   display: grid;
   gap: var(--space-lg);
+  min-height: 0;
 }
 
 .chat-header h2 {
@@ -135,6 +235,79 @@ h1 {
   font-size: var(--text-lg);
   font-family: "Spectral", serif;
   font-weight: 500;
+}
+
+.chat-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.city-menu {
+  position: relative;
+}
+
+.city-menu-toggle {
+  min-width: 2.2rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.city-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  width: min(260px, 70vw);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 14px 30px color-mix(in oklch, black 10%, transparent);
+  padding: 0.35rem;
+  display: none;
+  z-index: 12;
+}
+
+.city-menu-panel.is-open {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.city-menu-item {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.city-menu-item small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.city-menu-item:hover {
+  border-color: color-mix(in oklch, var(--accent) 42%, var(--line));
+  background: color-mix(in oklch, var(--accent-soft) 18%, var(--surface));
+}
+
+.city-menu-item.is-active {
+  border-color: color-mix(in oklch, var(--accent) 60%, var(--line));
+  background: color-mix(in oklch, var(--accent-soft) 30%, var(--surface));
 }
 
 .chat-header p {
@@ -146,12 +319,13 @@ h1 {
 }
 
 .chat-log {
-  min-height: 260px;
-  max-height: 420px;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   display: grid;
   gap: var(--space-md);
   padding-right: var(--space-sm);
+  min-width: 0;
 }
 
 .starter-state {
@@ -197,10 +371,13 @@ h1 {
 
 .bubble {
   width: fit-content;
-  max-width: min(75ch, 100%);
+  max-width: 100%;
   border-radius: 16px;
   padding: var(--space-md) var(--space-lg);
   line-height: 1.6;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .bubble p {
@@ -234,6 +411,7 @@ h1 {
   padding: 0.6rem 0.75rem;
   border-radius: 10px;
   overflow-x: auto;
+  max-width: 100%;
   background: color-mix(in oklch, var(--surface-2) 78%, white);
 }
 
@@ -258,6 +436,7 @@ h1 {
 .composer {
   display: grid;
   gap: var(--space-md);
+  min-height: 0;
 }
 
 textarea {
@@ -288,7 +467,7 @@ textarea:focus-visible {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: var(--space-lg);
+  gap: var(--space-sm);
 }
 
 .ghost-button {
@@ -387,38 +566,27 @@ button.is-loading::after {
   font-size: var(--text-sm);
 }
 
-.plan-preview-content {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: var(--space-lg);
-  background: color-mix(in oklch, var(--surface-2) 55%, white);
-}
-
-.preview-title {
-  margin: 0 0 var(--space-md);
-  font-family: "Spectral", serif;
-}
-
-.preview-block h4 {
-  margin: 0.6rem 0 0.4rem;
-  font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.preview-block ul {
-  margin: 0 0 0.6rem 1.1rem;
-}
-
 .plan-modal__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-sm);
 }
 
-.plan-modal-error {
-  min-height: 0;
+.premium-list {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: var(--space-lg);
+  background: color-mix(in oklch, var(--surface-2) 55%, white);
+}
+
+.premium-list p {
+  margin: 0 0 var(--space-sm);
+  font-weight: 600;
+}
+
+.premium-list ul {
+  margin: 0 0 0 1.1rem;
+  padding: 0;
 }
 
 .bubble-assistant.is-streaming::after {
@@ -445,12 +613,67 @@ button.is-loading::after {
 }
 
 @media (max-width: 920px) {
+  body {
+    overflow: hidden;
+  }
+
+  .shell {
+    height: 100svh;
+    min-height: 100svh;
+    padding: var(--space-md) 0;
+    gap: var(--space-md);
+  }
+
   .planner {
     grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .planner.is-gated {
+    grid-template-columns: 1fr;
+  }
+
+  .planner.is-gated .city-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .planner.is-focused .city-selector-wrap {
+    display: none;
   }
 
   .city-selector {
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .planner.is-focused .chat-panel {
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: var(--space-md);
+    padding: var(--space-md);
+  }
+
+  .planner.is-focused .chat-log {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .planner.is-focused .composer {
+    position: sticky;
+    bottom: 0;
+    background: color-mix(in oklch, var(--surface) 96%, white);
+    padding-top: var(--space-sm);
+    border-top: 1px solid color-mix(in oklch, var(--line) 70%, transparent);
+  }
+
+  .planner.is-focused textarea {
+    min-height: 64px;
+    max-height: 26svh;
+  }
+
+  h1 {
+    white-space: normal;
   }
 }
 

@@ -2,7 +2,7 @@ CITY_OPTIONS = {
     "san-francisco": {
         "label": "San Francisco",
         "country": "USA",
-        "prompt_hint": "Try: 36 hours in SF with great coffee and one excellent dinner.",
+        "prompt_hint": "36 hours in SF with great coffee and one excellent dinner.",
         "starter_prompts": [
             "Plan 36 hours in San Francisco around two meetings in SoMa.",
             "Give me a one-evening SF plan with a strong dinner and easy transit.",
@@ -12,7 +12,7 @@ CITY_OPTIONS = {
     "venice": {
         "label": "Venice",
         "country": "Italy",
-        "prompt_hint": "Try: 3 calm days in Venice with fewer crowds and better meals.",
+        "prompt_hint": "3 calm days in Venice with fewer crowds and better meals.",
         "starter_prompts": [
             "Plan 3 calm days in Venice with low-crowd mornings and great dinners.",
             "I have one full day in Venice. Build a tight, high-quality route.",
@@ -22,7 +22,7 @@ CITY_OPTIONS = {
     "cork": {
         "label": "Cork",
         "country": "Ireland",
-        "prompt_hint": "Try: one night in Cork with meetings, pubs, and no wasted time.",
+        "prompt_hint": "One night in Cork with meetings, pubs, and no wasted time.",
         "starter_prompts": [
             "I have one night in Cork. Fit in dinner, a pub, and an early departure.",
             "Build a Cork plan around two work blocks and one memorable meal.",

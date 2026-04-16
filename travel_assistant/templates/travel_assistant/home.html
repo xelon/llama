@@ -15,39 +15,71 @@
     <header class="hero">
       <p class="eyebrow">Llama Inc</p>
       <h1>Good itineraries are compounding assets.</h1>
-      <p class="lede">
-        Pick San Francisco, Venice, or Cork.
-      </p>
     </header>
 
     <section class="planner" aria-label="Trip planner">
-      <div class="city-selector" role="radiogroup" aria-label="Select city">
-        {% for slug, city in city_options.items %}
-          <button
-            class="city-pill {% if forloop.first %}is-active{% endif %}"
-            data-city="{{ slug }}"
-            data-city-label="{{ city.label }}"
-            data-city-country="{{ city.country }}"
-            data-city-hint="{{ city.prompt_hint }}"
-            type="button"
-            role="radio"
-            aria-checked="{% if forloop.first %}true{% else %}false{% endif %}"
-          >
-            <span>{{ city.label }}</span>
-            <small>{{ city.country }}</small>
-          </button>
-        {% endfor %}
+      <div class="city-selector-wrap">
+        <div class="city-selector" role="radiogroup" aria-label="Select city">
+          {% for slug, city in city_options.items %}
+            <button
+              class="city-pill {% if forloop.first %}is-active{% endif %}"
+              data-city="{{ slug }}"
+              data-city-label="{{ city.label }}"
+              data-city-country="{{ city.country }}"
+              data-city-hint="{{ city.prompt_hint }}"
+              type="button"
+              role="radio"
+              aria-checked="{% if forloop.first %}true{% else %}false{% endif %}"
+            >
+              <span class="city-icon" aria-hidden="true">
+                {% if slug == "san-francisco" %}
+                  <svg viewBox="0 0 64 64"><path d="M8 48h48M14 40h36M18 32h28M22 24h20M24 16h16" /><path d="M10 56V14m44 42V14" /><path d="M24 56V16m16 40V16" /></svg>
+                {% elif slug == "venice" %}
+                  <svg viewBox="0 0 64 64"><path d="M8 44c7 0 7 4 14 4s7-4 14-4 7 4 14 4 7-4 14-4" /><path d="M20 40V18l10-5v27M34 40V15l10 4v21" /><path d="M20 22h24" /></svg>
+                {% else %}
+                  <svg viewBox="0 0 64 64"><path d="M10 52h44M14 52V28h36v24" /><path d="M20 28V16h24v12" /><path d="M20 22h24M26 52V36m12 16V36" /></svg>
+                {% endif %}
+              </span>
+              <span class="city-text">
+                <strong>{{ city.label }}</strong>
+                <small>{{ city.country }}</small>
+              </span>
+            </button>
+          {% endfor %}
+        </div>
       </div>
 
       <article class="chat-panel">
         <div class="chat-header">
-          <h2 id="active-city-label">San Francisco</h2>
-          <p id="active-city-subtitle">USA</p>
+          <div>
+            <h2 id="active-city-label">Choose a city</h2>
+            <p id="active-city-subtitle">Select one to begin planning</p>
+          </div>
+          <div class="chat-header-actions">
+            <div class="city-menu">
+              <button type="button" id="city-menu-toggle" class="ghost-button city-menu-toggle" aria-expanded="false" aria-controls="city-menu-panel">☰</button>
+              <div id="city-menu-panel" class="city-menu-panel" aria-hidden="true">
+                {% for slug, city in city_options.items %}
+                  <button
+                    class="city-menu-item {% if forloop.first %}is-active{% endif %}"
+                    data-city="{{ slug }}"
+                    data-city-label="{{ city.label }}"
+                    data-city-country="{{ city.country }}"
+                    data-city-hint="{{ city.prompt_hint }}"
+                    type="button"
+                  >
+                    <span>{{ city.label }}</span>
+                    <small>{{ city.country }}</small>
+                  </button>
+                {% endfor %}
+              </div>
+            </div>
+            <button type="button" id="download-plan-button" class="ghost-button">Download Plan</button>
+          </div>
         </div>
 
         <div class="chat-log" id="chat-log" aria-live="polite">
           <section id="starter-state" class="starter-state">
-            <p class="starter-title">Start with one click</p>
             <div id="starter-prompts" class="starter-prompts"></div>
           </section>
         </div>
@@ -57,7 +89,6 @@
           <label for="message" class="sr-only">Trip question</label>
           <textarea id="message" name="message" rows="3" maxlength="1800"></textarea>
           <div class="composer-meta">
-            <button type="button" id="download-plan-button" class="ghost-button">Download Plan</button>
             <button type="submit" id="send-button">Ask</button>
           </div>
         </form>
@@ -70,14 +101,20 @@
     <div class="plan-modal__backdrop" data-close-modal="true"></div>
     <section class="plan-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
       <header class="plan-modal__header">
-        <h3 id="plan-modal-title">Plan Preview</h3>
-        <p id="plan-modal-subtitle">A concise plan generated from this conversation.</p>
+        <h3 id="plan-modal-title">Download Plan is Premium</h3>
+        <p id="plan-modal-subtitle">Unlock printable trip PDFs and save polished plans for each city.</p>
       </header>
-      <div id="plan-preview-content" class="plan-preview-content"></div>
-      <p id="plan-modal-error" class="error-line plan-modal-error" role="alert"></p>
+      <div class="premium-list">
+        <p>Includes:</p>
+        <ul>
+          <li>One-click PDF export</li>
+          <li>Structured itinerary summaries</li>
+          <li>Download-ready formatting for sharing</li>
+        </ul>
+      </div>
       <footer class="plan-modal__actions">
         <button type="button" id="close-plan-modal" class="ghost-button">Close</button>
-        <button type="button" id="save-plan-pdf">Save PDF</button>
+        <button type="button" id="start-subscription">Start Subscription</button>
       </footer>
     </section>
   </div>
@@ -85,6 +122,6 @@
   {{ city_options|json_script:"city-options-data" }}
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" defer></script>
-  <script src="{% static 'travel_assistant/js/home.js' %}" defer></script>
+  <script src="{% static 'travel_assistant/js/home.js' %}?v=3" defer></script>
 </body>
 </html>

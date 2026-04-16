@@ -1,4 +1,5 @@
 const cityButtons = Array.from(document.querySelectorAll(".city-pill"));
+const planner = document.querySelector(".planner");
 const activeCityLabel = document.querySelector("#active-city-label");
 const activeCitySubtitle = document.querySelector("#active-city-subtitle");
 const chatLog = document.querySelector("#chat-log");
@@ -10,14 +11,16 @@ const sendButton = document.querySelector("#send-button");
 const errorLine = document.querySelector("#error-line");
 const downloadPlanButton = document.querySelector("#download-plan-button");
 const planModal = document.querySelector("#plan-modal");
-const planPreviewContent = document.querySelector("#plan-preview-content");
-const planModalError = document.querySelector("#plan-modal-error");
 const closePlanModalButton = document.querySelector("#close-plan-modal");
-const savePlanPdfButton = document.querySelector("#save-plan-pdf");
+const startSubscriptionButton = document.querySelector("#start-subscription");
+const cityMenuToggle = document.querySelector("#city-menu-toggle");
+const cityMenuPanel = document.querySelector("#city-menu-panel");
+const cityMenuItems = Array.from(document.querySelectorAll(".city-menu-item"));
 const cityOptions = JSON.parse(document.querySelector("#city-options-data").textContent);
+const CHAT_STORAGE_KEY = "llama_city_conversations_v1";
 
 let selectedCity = cityButtons[0]?.dataset.city || "san-francisco";
-const conversationTurns = [];
+let cityConversations = {};
 
 function csrfToken() {
   const input = chatForm.querySelector("input[name=csrfmiddlewaretoken]");
@@ -25,9 +28,6 @@ function csrfToken() {
 }
 
 function appendBubble(text, who) {
-  if (starterState) {
-    starterState.remove();
-  }
   const bubble = document.createElement("div");
   bubble.className = `bubble ${who === "user" ? "bubble-user" : "bubble-assistant"}`;
   if (who === "assistant") {
@@ -38,6 +38,68 @@ function appendBubble(text, who) {
   chatLog.appendChild(bubble);
   chatLog.scrollTop = chatLog.scrollHeight;
   return bubble;
+}
+
+function getConversation(citySlug = selectedCity) {
+  if (!citySlug) {
+    return [];
+  }
+  if (!Array.isArray(cityConversations[citySlug])) {
+    cityConversations[citySlug] = [];
+  }
+  return cityConversations[citySlug];
+}
+
+function saveConversationState() {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(cityConversations));
+  } catch (_error) {
+    // Ignore storage errors in private mode/quota limits.
+  }
+}
+
+function loadConversationState() {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    const normalized = {};
+    Object.entries(parsed).forEach(([slug, turns]) => {
+      if (!cityOptions[slug] || !Array.isArray(turns)) {
+        return;
+      }
+      normalized[slug] = turns
+        .filter((turn) => turn && (turn.role === "user" || turn.role === "assistant") && typeof turn.content === "string")
+        .map((turn) => ({ role: turn.role, content: turn.content }));
+    });
+    return normalized;
+  } catch (_error) {
+    return {};
+  }
+}
+
+function renderStarterState() {
+  chatLog.innerHTML = `
+    <section id="starter-state" class="starter-state">
+      <div id="starter-prompts" class="starter-prompts"></div>
+    </section>
+  `;
+}
+
+function renderChatForSelectedCity() {
+  chatLog.innerHTML = "";
+  const turns = getConversation();
+  if (!turns.length) {
+    renderStarterState();
+    renderStarterPrompts();
+    return;
+  }
+  turns.forEach((turn) => appendBubble(turn.content, turn.role));
 }
 
 function renderMarkdown(markdownText) {
@@ -54,111 +116,33 @@ function setPlanModalOpen(isOpen) {
   planModal.setAttribute("aria-hidden", isOpen ? "false" : "true");
 }
 
+function setCityMenuOpen(isOpen) {
+  cityMenuPanel.classList.toggle("is-open", isOpen);
+  cityMenuPanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
+  cityMenuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+}
+
 function setSubmittingState(isSubmitting) {
   sendButton.disabled = isSubmitting;
   sendButton.classList.toggle("is-loading", isSubmitting);
   sendButton.textContent = isSubmitting ? "Writing..." : "Ask";
   downloadPlanButton.disabled = isSubmitting;
+  cityMenuToggle.disabled = isSubmitting;
+  cityButtons.forEach((button) => {
+    button.disabled = isSubmitting;
+  });
+  cityMenuItems.forEach((item) => {
+    item.disabled = isSubmitting;
+  });
 }
 
-function renderSummaryPreview(summary) {
-  const renderList = (title, items) => `
-    <section class="preview-block">
-      <h4>${title}</h4>
-      <ul>${(items || []).map((item) => `<li>${item}</li>`).join("") || "<li>No items.</li>"}</ul>
-    </section>
-  `;
-
-  const dayBlocks = (summary.day_plan || []).map((day) => {
-    const items = (day.items || []).map((item) => `<li>${item}</li>`).join("");
-    return `<section class="preview-block"><h4>${day.day || "Day"}</h4><ul>${items || "<li>No items.</li>"}</ul></section>`;
-  }).join("");
-
-  planPreviewContent.innerHTML = `
-    <h3 class="preview-title">${summary.title || "Trip Plan"}</h3>
-    ${renderList("Overview", summary.trip_overview)}
-    ${dayBlocks || renderList("Day Plan", [])}
-    ${renderList("Logistics", summary.logistics)}
-    ${renderList("Reservations", summary.reservations)}
-    ${renderList("Alternatives", summary.alternatives)}
-    ${renderList("Notes", summary.notes)}
-  `;
-}
-
-async function openPlanPreview() {
-  if (!conversationTurns.length) {
-    errorLine.textContent = "Start a conversation before downloading.";
-    return;
-  }
-
-  planModalError.textContent = "";
-  planPreviewContent.innerHTML = "<p>Preparing preview...</p>";
+function openPlanPremiumInterstitial() {
   setPlanModalOpen(true);
-
-  try {
-    const response = await fetch("/api/plan/preview/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": csrfToken(),
-      },
-      body: JSON.stringify({
-        city: selectedCity,
-        conversationTurns,
-      }),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "Could not generate preview.");
-    }
-    renderSummaryPreview(payload.summary);
-  } catch (error) {
-    planPreviewContent.innerHTML = "";
-    planModalError.textContent = error.message || "Could not generate preview.";
-  }
-}
-
-async function savePlanPdf() {
-  planModalError.textContent = "";
-  savePlanPdfButton.disabled = true;
-  savePlanPdfButton.classList.add("is-loading");
-  savePlanPdfButton.textContent = "Saving...";
-
-  try {
-    const response = await fetch("/api/plan/pdf/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": csrfToken(),
-      },
-      body: JSON.stringify({
-        city: selectedCity,
-        conversationTurns,
-      }),
-    });
-    if (!response.ok) {
-      const payload = await response.json();
-      throw new Error(payload.error || "Could not generate PDF.");
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `llama-plan-${selectedCity}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    planModalError.textContent = error.message || "Could not generate PDF.";
-  } finally {
-    savePlanPdfButton.disabled = false;
-    savePlanPdfButton.classList.remove("is-loading");
-    savePlanPdfButton.textContent = "Save PDF";
-  }
 }
 
 async function streamAssistantReply(message) {
+  const citySlugAtRequestStart = selectedCity;
+  const cityTurns = getConversation(citySlugAtRequestStart);
   const response = await fetch("/api/chat/", {
     method: "POST",
     headers: {
@@ -166,7 +150,7 @@ async function streamAssistantReply(message) {
       "X-CSRFToken": csrfToken(),
     },
     body: JSON.stringify({
-      city: selectedCity,
+      city: citySlugAtRequestStart,
       message,
     }),
   });
@@ -211,10 +195,13 @@ async function streamAssistantReply(message) {
 
       const payload = JSON.parse(dataLine);
       if ((eventName === "start" || eventName === "delta") && !hasStarted) {
-        appendBubble(message, "user");
-        conversationTurns.push({ role: "user", content: message });
-        assistantBubble = appendBubble("", "assistant");
-        assistantBubble.classList.add("is-streaming");
+        cityTurns.push({ role: "user", content: message });
+        saveConversationState();
+        if (selectedCity === citySlugAtRequestStart) {
+          appendBubble(message, "user");
+          assistantBubble = appendBubble("", "assistant");
+          assistantBubble.classList.add("is-streaming");
+        }
         hasStarted = true;
       }
 
@@ -224,7 +211,11 @@ async function streamAssistantReply(message) {
         chatLog.scrollTop = chatLog.scrollHeight;
       } else if (eventName === "end" && assistantBubble) {
         assistantBubble.classList.remove("is-streaming");
-        conversationTurns.push({ role: "assistant", content: assistantText.trim() });
+        cityTurns.push({ role: "assistant", content: assistantText.trim() });
+        saveConversationState();
+      } else if (eventName === "end") {
+        cityTurns.push({ role: "assistant", content: assistantText.trim() });
+        saveConversationState();
       } else if (eventName === "error" && assistantBubble) {
         assistantBubble.classList.remove("is-streaming");
         throw new Error(payload.error || "Response stream failed.");
@@ -239,6 +230,10 @@ async function streamAssistantReply(message) {
 }
 
 function submitPrompt(promptText) {
+  if (!selectedCity) {
+    errorLine.textContent = "Choose a city first.";
+    return;
+  }
   const message = promptText.trim();
   if (!message) {
     errorLine.textContent = "Type a trip question first.";
@@ -259,10 +254,11 @@ function submitPrompt(promptText) {
 }
 
 function renderStarterPrompts() {
-  if (!starterPrompts) {
+  const promptsRoot = document.querySelector("#starter-prompts");
+  if (!promptsRoot) {
     return;
   }
-  starterPrompts.innerHTML = "";
+  promptsRoot.innerHTML = "";
   const prompts = cityOptions[selectedCity]?.starter_prompts || [];
   prompts.forEach((prompt) => {
     const button = document.createElement("button");
@@ -270,15 +266,19 @@ function renderStarterPrompts() {
     button.className = "starter-chip";
     button.textContent = prompt;
     button.addEventListener("click", () => submitPrompt(prompt));
-    starterPrompts.appendChild(button);
+    promptsRoot.appendChild(button);
   });
 }
 
-function setActiveCity(button) {
+function setActiveCity(button, options = { collapseSelector: false }) {
   cityButtons.forEach((item) => {
     const isActive = item === button;
     item.classList.toggle("is-active", isActive);
     item.setAttribute("aria-checked", isActive ? "true" : "false");
+  });
+  cityMenuItems.forEach((item) => {
+    const isActive = item.dataset.city === button.dataset.city;
+    item.classList.toggle("is-active", isActive);
   });
 
   selectedCity = button.dataset.city;
@@ -286,23 +286,46 @@ function setActiveCity(button) {
   activeCitySubtitle.textContent = button.dataset.cityCountry;
   messageInput.placeholder = button.dataset.cityHint;
   errorLine.textContent = "";
-  renderStarterPrompts();
+  if (options.collapseSelector) {
+    planner.classList.remove("is-gated");
+    planner.classList.add("is-focused");
+  }
+  setCityMenuOpen(false);
+  renderChatForSelectedCity();
 }
 
 cityButtons.forEach((button) => {
-  button.addEventListener("click", () => setActiveCity(button));
+  button.addEventListener("click", () => setActiveCity(button, { collapseSelector: true }));
+});
+
+cityMenuItems.forEach((item) => {
+  item.addEventListener("click", () => setActiveCity(item, { collapseSelector: true }));
 });
 
 if (cityButtons[0]) {
-  setActiveCity(cityButtons[0]);
+  cityConversations = loadConversationState();
+  selectedCity = null;
+  planner.classList.add("is-gated");
+  setCityMenuOpen(false);
 }
 
-downloadPlanButton.addEventListener("click", openPlanPreview);
+downloadPlanButton.addEventListener("click", openPlanPremiumInterstitial);
+cityMenuToggle.addEventListener("click", () => {
+  setCityMenuOpen(!cityMenuPanel.classList.contains("is-open"));
+});
 closePlanModalButton.addEventListener("click", () => setPlanModalOpen(false));
-savePlanPdfButton.addEventListener("click", savePlanPdf);
+startSubscriptionButton.addEventListener("click", () => {
+  setPlanModalOpen(false);
+  errorLine.textContent = "Subscriptions are coming soon.";
+});
 planModal.addEventListener("click", (event) => {
   if (event.target.dataset.closeModal === "true") {
     setPlanModalOpen(false);
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!cityMenuPanel.contains(event.target) && !cityMenuToggle.contains(event.target)) {
+    setCityMenuOpen(false);
   }
 });
 
