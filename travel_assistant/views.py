@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
 from django.core import signing
@@ -44,7 +44,7 @@ def _is_active_subscription_status(subscription_status):
 def _period_end_from_unix(unix_timestamp):
     if not unix_timestamp:
         return None
-    return timezone.datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
+    return timezone.datetime.fromtimestamp(unix_timestamp, tz=dt_timezone.utc)
 
 
 def _upsert_subscriber_access(email, customer_id, subscription_id, subscription_status, current_period_end):

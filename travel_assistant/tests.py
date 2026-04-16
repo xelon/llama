@@ -203,6 +203,25 @@ class BillingApiTests(TestCase):
         )
 
     @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_checkout_success_handles_subscription_period_end_timestamp(self, mocked_client):
+        mocked_client.return_value.checkout.Session.retrieve.return_value = {
+            "customer": "cus_124",
+            "customer_details": {"email": "time@example.com"},
+            "subscription": {
+                "id": "sub_124",
+                "status": "active",
+                "current_period_end": 1777000000,
+            },
+            "metadata": {"email": "time@example.com"},
+        }
+        response = self.client.get(f"{self.success_url}?session_id=cs_test_124")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("?checkout=success", response.url)
+        access = SubscriberAccess.objects.get(email="time@example.com")
+        self.assertIsNotNone(access.current_period_end)
+
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
     @patch("travel_assistant.views.settings.STRIPE_WEBHOOK_SECRET", "whsec_123")
     @patch("travel_assistant.views._stripe_client")
     def test_webhook_updates_subscription(self, mocked_client):
