@@ -78,6 +78,9 @@
                 {% endfor %}
               </div>
             </div>
+            {% if show_manage_subscription %}
+              <a href="{% url 'billing_portal_redirect' %}" class="ghost-button manage-subscription-link">Manage subscription</a>
+            {% endif %}
             <button type="button" id="download-plan-button" class="ghost-button is-disabled" aria-disabled="true" title="Start a chat before downloading the plan.">Download Plan</button>
           </div>
         </div>

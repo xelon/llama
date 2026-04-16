@@ -44,6 +44,21 @@ def _safe_get(obj, key, default=None):
         return default
 
 
+def _stripe_object_id(value):
+    if not value:
+        return ""
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed.startswith("{"):
+            try:
+                parsed = json.loads(trimmed)
+                return parsed.get("id", "") if isinstance(parsed, dict) else ""
+            except json.JSONDecodeError:
+                return trimmed
+        return trimmed
+    return _safe_get(value, "id", "")
+
+
 def _stripe_client():
     stripe.api_key = settings.STRIPE_SECRET_KEY
     stripe.api_version = settings.STRIPE_API_VERSION
@@ -184,12 +199,24 @@ def _subscriber_access_from_request(request):
     return SubscriberAccess.objects.filter(email=email).first()
 
 
+def _can_manage_subscription_from_request(request):
+    access = _subscriber_access_from_request(request)
+    if not access:
+        return False
+    if not _is_active_subscription_status(access.subscription_status):
+        return False
+    return bool(_stripe_object_id(access.stripe_customer_id))
+
+
 @require_GET
 def home(request):
     return render(
         request,
         "travel_assistant/home.html",
-        {"city_options": CITY_OPTIONS},
+        {
+            "city_options": CITY_OPTIONS,
+            "show_manage_subscription": _can_manage_subscription_from_request(request),
+        },
     )
 
 
@@ -465,7 +492,7 @@ def checkout_success(request):
     try:
         _upsert_subscriber_access(
             email=customer_email,
-            customer_id=_safe_get(session, "customer"),
+            customer_id=_stripe_object_id(_safe_get(session, "customer")),
             subscription_id=_safe_get(subscription, "id"),
             subscription_status=subscription_status,
             current_period_end=_period_end_from_unix(_safe_get(subscription, "current_period_end")),
@@ -522,17 +549,18 @@ def billing_portal_redirect(request):
     if not settings.STRIPE_SECRET_KEY:
         return redirect("/billing/success/?state=failed")
     access = _subscriber_access_from_request(request)
-    if not access or not access.stripe_customer_id:
+    customer_id = _stripe_object_id(access.stripe_customer_id) if access else ""
+    if not access or not customer_id:
         return redirect("/billing/success/?state=failed")
 
     stripe_client = _stripe_client()
     try:
         session = stripe_client.billing_portal.Session.create(
-            customer=access.stripe_customer_id,
+            customer=customer_id,
             return_url=f"{settings.SITE_URL}/billing/success/?state=success",
         )
     except Exception:
-        logger.exception("Failed creating billing portal session for customer=%s", access.stripe_customer_id)
+        logger.exception("Failed creating billing portal session for customer=%s", customer_id)
         return redirect("/billing/success/?state=failed")
     return redirect(_safe_get(session, "url", "/billing/success/?state=failed"))
 
@@ -566,7 +594,7 @@ def stripe_webhook(request):
             metadata = _safe_get(data_object, "metadata", {})
             email = _normalized_email(_safe_get(metadata, "email", ""))
         subscription_id = _safe_get(data_object, "subscription")
-        customer_id = _safe_get(data_object, "customer")
+        customer_id = _stripe_object_id(_safe_get(data_object, "customer"))
         subscription_status = ""
         period_end = None
         if subscription_id:
@@ -581,7 +609,7 @@ def stripe_webhook(request):
     if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
         metadata = _safe_get(data_object, "metadata", {})
         email = _normalized_email(_safe_get(metadata, "email", ""))
-        customer_id = _safe_get(data_object, "customer", "")
+        customer_id = _stripe_object_id(_safe_get(data_object, "customer", ""))
         if not email and customer_id:
             access = SubscriberAccess.objects.filter(stripe_customer_id=customer_id).first()
             if access:

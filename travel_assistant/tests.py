@@ -17,6 +17,37 @@ class StripeLikeObject:
         return self._data[key]
 
 
+class HomePageTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.home_url = reverse("home")
+
+    def test_home_shows_manage_subscription_when_subscribed(self):
+        SubscriberAccess.objects.create(
+            email="subscribed@example.com",
+            stripe_customer_id="cus_home_1",
+            stripe_subscription_id="sub_home_1",
+            subscription_status="active",
+        )
+        token = signing.dumps({"email": "subscribed@example.com"}, salt="llama_subscription_access")
+        self.client.cookies["llama_subscription_access"] = token
+        response = self.client.get(self.home_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Manage subscription")
+        self.assertContains(response, reverse("billing_portal_redirect"))
+
+    def test_home_hides_manage_subscription_without_cookie(self):
+        SubscriberAccess.objects.create(
+            email="subscribed@example.com",
+            stripe_customer_id="cus_home_1",
+            stripe_subscription_id="sub_home_1",
+            subscription_status="active",
+        )
+        response = self.client.get(self.home_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Manage subscription")
+
+
 class ChatApiTests(TestCase):
     def setUp(self):
         self.client = Client()
@@ -259,7 +290,7 @@ class BillingApiTests(TestCase):
     def test_checkout_success_handles_stripe_like_session_object(self, mocked_client):
         mocked_client.return_value.checkout.Session.retrieve.return_value = StripeLikeObject(
             {
-                "customer": "cus_126",
+                "customer": StripeLikeObject({"id": "cus_126"}),
                 "customer_details": StripeLikeObject({"email": "sessionobj@example.com"}),
                 "subscription": StripeLikeObject(
                     {
@@ -276,6 +307,7 @@ class BillingApiTests(TestCase):
         self.assertIn("/billing/success/?state=success", response.url)
         access = SubscriberAccess.objects.get(email="sessionobj@example.com")
         self.assertEqual(access.stripe_subscription_id, "sub_126")
+        self.assertEqual(access.stripe_customer_id, "cus_126")
 
     def test_billing_success_page_renders(self):
         response = self.client.get(f"{self.success_page_url}?state=success")
@@ -352,6 +384,28 @@ class BillingApiTests(TestCase):
         response = self.client.get(self.portal_url)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, "https://billing.stripe.test/session")
+
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_billing_portal_redirect_normalizes_stringified_customer_payload(self, mocked_client):
+        SubscriberAccess.objects.create(
+            email="portal-json@example.com",
+            stripe_customer_id='{"id":"cus_json_123","object":"customer"}',
+            stripe_subscription_id="sub_portal_json",
+            subscription_status="active",
+        )
+        token = signing.dumps({"email": "portal-json@example.com"}, salt="llama_subscription_access")
+        self.client.cookies["llama_subscription_access"] = token
+        mocked_client.return_value.billing_portal.Session.create.return_value = {
+            "url": "https://billing.stripe.test/session-json",
+        }
+        response = self.client.get(self.portal_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "https://billing.stripe.test/session-json")
+        mocked_client.return_value.billing_portal.Session.create.assert_called_once_with(
+            customer="cus_json_123",
+            return_url="http://127.0.0.1:8000/billing/success/?state=success",
+        )
 
     @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
     @patch("travel_assistant.views.settings.STRIPE_WEBHOOK_SECRET", "whsec_123")
