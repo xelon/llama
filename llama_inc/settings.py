@@ -37,6 +37,20 @@ ALLOWED_HOSTS = [
     if host.strip()
 ]
 
+default_csrf_trusted_origins = ["https://llama.xelon.it"]
+csrf_trusted_origins_env = os.getenv("CSRF_TRUSTED_ORIGINS", "")
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in (
+        csrf_trusted_origins_env.split(",")
+        if csrf_trusted_origins_env
+        else default_csrf_trusted_origins
+    )
+    if origin.strip()
+]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 
 # Application definition
 
