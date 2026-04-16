@@ -27,4 +27,4 @@ RUN mkdir -p /data
 
 EXPOSE 8000
 
-CMD ["bash","-lc","python manage.py migrate && python manage.py collectstatic --noinput && gunicorn llama_inc.wsgi:application --bind 0.0.0.0:${PORT} --workers 2 --threads 4 --timeout 120"]
+CMD ["bash","-lc","python manage.py migrate && python manage.py collectstatic --noinput && gunicorn llama_inc.wsgi:application --bind 0.0.0.0:${PORT} --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile - --capture-output --log-level info"]

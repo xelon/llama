@@ -86,6 +86,9 @@ Requires an active Stripe subscription (email-linked entitlement) before returni
   - `STRIPE_WEBHOOK_SECRET`
   - `STRIPE_MONTHLY_PRICE_ID`
   - `STRIPE_API_VERSION`
+- Database persistence:
+  - Set `DATABASE_PATH=/data/db.sqlite3` in production and mount `/data` as persistent volume in Coolify.
+  - If unset, local dev defaults to `db.sqlite3` in project root; production defaults to `/data/db.sqlite3`.
 - Local webhook forwarding example:
   ```bash
   stripe listen --forward-to http://127.0.0.1:8000/api/billing/webhook/
