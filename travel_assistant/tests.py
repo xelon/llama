@@ -8,6 +8,14 @@ from travel_assistant.constants import MAX_PROMPT_LENGTH
 from travel_assistant.models import SubscriberAccess
 
 
+class StripeLikeObject:
+    def __init__(self, data):
+        self._data = data
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+
 class ChatApiTests(TestCase):
     def setUp(self):
         self.client = Client()
@@ -269,6 +277,45 @@ class BillingApiTests(TestCase):
                 email="paid@example.com",
                 stripe_customer_id="cus_123",
                 stripe_subscription_id="sub_123",
+                subscription_status="active",
+            ).exists()
+        )
+
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views.settings.STRIPE_WEBHOOK_SECRET", "whsec_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_webhook_handles_stripe_like_event_objects(self, mocked_client):
+        event = StripeLikeObject(
+            {
+                "type": "customer.subscription.updated",
+                "data": StripeLikeObject(
+                    {
+                        "object": StripeLikeObject(
+                            {
+                                "id": "sub_200",
+                                "customer": "cus_200",
+                                "status": "active",
+                                "current_period_end": 1777000000,
+                                "metadata": StripeLikeObject({"email": "obj@example.com"}),
+                            }
+                        )
+                    }
+                ),
+            }
+        )
+        mocked_client.return_value.Webhook.construct_event.return_value = event
+        response = self.client.post(
+            self.webhook_url,
+            data=json.dumps({"id": "evt_200"}),
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="sig",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            SubscriberAccess.objects.filter(
+                email="obj@example.com",
+                stripe_customer_id="cus_200",
+                stripe_subscription_id="sub_200",
                 subscription_status="active",
             ).exists()
         )

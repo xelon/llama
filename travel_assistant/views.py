@@ -31,6 +31,17 @@ def _normalized_email(raw_email):
     return (raw_email or "").strip().lower()
 
 
+def _safe_get(obj, key, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        return obj[key]
+    except Exception:
+        return default
+
+
 def _stripe_client():
     stripe.api_key = settings.STRIPE_SECRET_KEY
     stripe.api_version = settings.STRIPE_API_VERSION
@@ -390,29 +401,33 @@ def stripe_webhook(request):
     except Exception:
         return JsonResponse({"error": "Invalid webhook signature."}, status=400)
 
-    event_type = event.get("type")
-    data_object = (event.get("data") or {}).get("object", {})
+    event_type = _safe_get(event, "type", "")
+    data = _safe_get(event, "data", {})
+    data_object = _safe_get(data, "object", {})
 
     if event_type == "checkout.session.completed":
-        email = _normalized_email((data_object.get("customer_details") or {}).get("email"))
+        customer_details = _safe_get(data_object, "customer_details", {})
+        email = _normalized_email(_safe_get(customer_details, "email", ""))
         if not email:
-            email = _normalized_email((data_object.get("metadata") or {}).get("email"))
-        subscription_id = data_object.get("subscription")
-        customer_id = data_object.get("customer")
+            metadata = _safe_get(data_object, "metadata", {})
+            email = _normalized_email(_safe_get(metadata, "email", ""))
+        subscription_id = _safe_get(data_object, "subscription")
+        customer_id = _safe_get(data_object, "customer")
         subscription_status = ""
         period_end = None
         if subscription_id:
             try:
                 subscription = stripe_client.Subscription.retrieve(subscription_id)
-                subscription_status = subscription.get("status", "")
-                period_end = _period_end_from_unix(subscription.get("current_period_end"))
+                subscription_status = _safe_get(subscription, "status", "")
+                period_end = _period_end_from_unix(_safe_get(subscription, "current_period_end"))
             except Exception:
                 logger.exception("Failed retrieving subscription %s from checkout event", subscription_id)
         _upsert_subscriber_access(email, customer_id, subscription_id, subscription_status, period_end)
 
     if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
-        email = _normalized_email((data_object.get("metadata") or {}).get("email"))
-        customer_id = data_object.get("customer", "")
+        metadata = _safe_get(data_object, "metadata", {})
+        email = _normalized_email(_safe_get(metadata, "email", ""))
+        customer_id = _safe_get(data_object, "customer", "")
         if not email and customer_id:
             access = SubscriberAccess.objects.filter(stripe_customer_id=customer_id).first()
             if access:
@@ -420,9 +435,9 @@ def stripe_webhook(request):
         _upsert_subscriber_access(
             email=email,
             customer_id=customer_id,
-            subscription_id=data_object.get("id", ""),
-            subscription_status=data_object.get("status", ""),
-            current_period_end=_period_end_from_unix(data_object.get("current_period_end")),
+            subscription_id=_safe_get(data_object, "id", ""),
+            subscription_status=_safe_get(data_object, "status", ""),
+            current_period_end=_period_end_from_unix(_safe_get(data_object, "current_period_end")),
         )
 
     return JsonResponse({"received": True})
