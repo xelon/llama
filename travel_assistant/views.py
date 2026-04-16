@@ -1,6 +1,8 @@
 import json
+import logging
 from datetime import datetime
 
+from django.conf import settings
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.template.loader import render_to_string
 from django.shortcuts import render
@@ -13,6 +15,8 @@ from travel_assistant.services.openai_client import (
     summarize_trip_plan,
     stream_trip_response,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @require_GET
@@ -62,6 +66,11 @@ def chat_api(request):
         except OpenAIConfigurationError as exc:
             yield sse_event("error", {"error": str(exc)})
         except Exception:
+            logger.exception(
+                "Chat streaming failed for city=%s model=%s",
+                city_slug,
+                settings.OPENAI_MODEL,
+            )
             yield sse_event(
                 "error",
                 {"error": "Assistant unavailable right now. Try again."},

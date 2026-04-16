@@ -160,7 +160,21 @@ async function streamAssistantReply(message) {
   });
 
   if (!response.ok || !response.body) {
-    throw new Error("Assistant unavailable right now. Try again.");
+    let backendError = "";
+    try {
+      const text = await response.text();
+      if (text) {
+        try {
+          const payload = JSON.parse(text);
+          backendError = payload.error || "";
+        } catch (_jsonError) {
+          backendError = text.slice(0, 180);
+        }
+      }
+    } catch (_readError) {
+      // Ignore response parsing issues and keep fallback.
+    }
+    throw new Error(backendError || "Assistant unavailable right now. Try again.");
   }
 
   const reader = response.body.getReader();
