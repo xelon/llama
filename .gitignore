@@ -10,3 +10,4 @@ staticfiles/
 .mypy_cache/
 .coverage
 htmlcov/
+.playwright-mcp/

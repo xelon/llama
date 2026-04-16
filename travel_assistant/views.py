@@ -104,10 +104,12 @@ def _read_restore_token(token):
 
 
 def _send_restore_email(email, restore_url):
-    if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
+    resend_api_key = (settings.RESEND_API_KEY or "").strip()
+    resend_from_email = (settings.RESEND_FROM_EMAIL or "").strip()
+    if not resend_api_key or not resend_from_email:
         return False, "Restore email provider is not configured."
     payload = {
-        "from": settings.RESEND_FROM_EMAIL,
+        "from": resend_from_email,
         "to": [email],
         "subject": "Restore your Llama subscription access",
         "html": (
@@ -120,8 +122,10 @@ def _send_restore_email(email, restore_url):
         "https://api.resend.com/emails",
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Authorization": f"Bearer {resend_api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "llama-inc-example/1.0",
         },
         method="POST",
     )
