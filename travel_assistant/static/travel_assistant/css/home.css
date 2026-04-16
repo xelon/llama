@@ -49,9 +49,11 @@ body {
 }
 
 .hero {
-  max-width: 70ch;
+  max-width: none;
   display: grid;
   gap: var(--space-lg);
+  justify-items: center;
+  text-align: center;
 }
 
 .eyebrow {

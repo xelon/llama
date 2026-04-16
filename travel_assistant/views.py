@@ -105,7 +105,7 @@ def _read_restore_token(token):
 
 def _send_restore_email(email, restore_url):
     if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
-        return False
+        return False, "Restore email provider is not configured."
     payload = {
         "from": settings.RESEND_FROM_EMAIL,
         "to": [email],
@@ -127,10 +127,23 @@ def _send_restore_email(email, restore_url):
     )
     try:
         with urlrequest.urlopen(req, timeout=10):
-            return True
+            return True, ""
+    except urlerror.HTTPError as exc:
+        response_body = ""
+        try:
+            response_body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            response_body = ""
+        logger.error(
+            "Resend restore email rejected for %s status=%s body=%s",
+            email,
+            exc.code,
+            response_body,
+        )
+        return False, "Email provider rejected restore email. Verify Resend key and sender domain."
     except (urlerror.URLError, TimeoutError):
         logger.exception("Failed to send restore email to %s", email)
-        return False
+        return False, "Email provider unavailable. Try again in a moment."
 
 
 def _read_subscription_email_from_cookie(request):
@@ -399,8 +412,9 @@ def request_restore_link_api(request):
 
     token = _build_restore_token(email)
     restore_url = f"{settings.SITE_URL}/billing/restore/?token={token}"
-    if not _send_restore_email(email, restore_url):
-        return JsonResponse({"error": "Could not send restore link right now."}, status=502)
+    sent, error_message = _send_restore_email(email, restore_url)
+    if not sent:
+        return JsonResponse({"error": error_message}, status=502)
     return JsonResponse({"action": "restore_sent"})
 
 
