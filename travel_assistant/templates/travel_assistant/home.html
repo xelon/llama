@@ -1,0 +1,90 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Llama Inc | Travel Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Spectral:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'travel_assistant/css/home.css' %}">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">Llama Inc</p>
+      <h1>Good itineraries are compounding assets.</h1>
+      <p class="lede">
+        Pick San Francisco, Venice, or Cork.
+      </p>
+    </header>
+
+    <section class="planner" aria-label="Trip planner">
+      <div class="city-selector" role="radiogroup" aria-label="Select city">
+        {% for slug, city in city_options.items %}
+          <button
+            class="city-pill {% if forloop.first %}is-active{% endif %}"
+            data-city="{{ slug }}"
+            data-city-label="{{ city.label }}"
+            data-city-country="{{ city.country }}"
+            data-city-hint="{{ city.prompt_hint }}"
+            type="button"
+            role="radio"
+            aria-checked="{% if forloop.first %}true{% else %}false{% endif %}"
+          >
+            <span>{{ city.label }}</span>
+            <small>{{ city.country }}</small>
+          </button>
+        {% endfor %}
+      </div>
+
+      <article class="chat-panel">
+        <div class="chat-header">
+          <h2 id="active-city-label">San Francisco</h2>
+          <p id="active-city-subtitle">USA</p>
+        </div>
+
+        <div class="chat-log" id="chat-log" aria-live="polite">
+          <section id="starter-state" class="starter-state">
+            <p class="starter-title">Start with one click</p>
+            <div id="starter-prompts" class="starter-prompts"></div>
+          </section>
+        </div>
+
+        <form id="chat-form" class="composer">
+          {% csrf_token %}
+          <label for="message" class="sr-only">Trip question</label>
+          <textarea id="message" name="message" rows="3" maxlength="1800"></textarea>
+          <div class="composer-meta">
+            <button type="button" id="download-plan-button" class="ghost-button">Download Plan</button>
+            <button type="submit" id="send-button">Ask</button>
+          </div>
+        </form>
+        <p id="error-line" class="error-line" role="alert"></p>
+      </article>
+    </section>
+  </main>
+
+  <div id="plan-modal" class="plan-modal" aria-hidden="true">
+    <div class="plan-modal__backdrop" data-close-modal="true"></div>
+    <section class="plan-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
+      <header class="plan-modal__header">
+        <h3 id="plan-modal-title">Plan Preview</h3>
+        <p id="plan-modal-subtitle">A concise plan generated from this conversation.</p>
+      </header>
+      <div id="plan-preview-content" class="plan-preview-content"></div>
+      <p id="plan-modal-error" class="error-line plan-modal-error" role="alert"></p>
+      <footer class="plan-modal__actions">
+        <button type="button" id="close-plan-modal" class="ghost-button">Close</button>
+        <button type="button" id="save-plan-pdf">Save PDF</button>
+      </footer>
+    </section>
+  </div>
+
+  {{ city_options|json_script:"city-options-data" }}
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" defer></script>
+  <script src="{% static 'travel_assistant/js/home.js' %}" defer></script>
+</body>
+</html>

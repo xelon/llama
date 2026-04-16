@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Helvetica, Arial, sans-serif; color: #1d2328; font-size: 12px; line-height: 1.45; }
+    h1, h2, h3 { margin: 0 0 8px; }
+    h1 { font-size: 20px; }
+    h2 { font-size: 14px; margin-top: 18px; }
+    p { margin: 0 0 8px; }
+    ul { margin: 0 0 8px 16px; padding: 0; }
+    li { margin: 0 0 4px; }
+    .meta { color: #4e5a64; margin-bottom: 16px; }
+    .day-block { margin-bottom: 10px; }
+    .day-title { font-weight: bold; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <h1>{{ summary.title }}</h1>
+  <p class="meta">{{ city }}, {{ country }} | Generated {{ generated_at }}</p>
+
+  <h2>Trip Overview</h2>
+  <ul>
+    {% for item in summary.trip_overview %}
+      <li>{{ item }}</li>
+    {% empty %}
+      <li>No overview available.</li>
+    {% endfor %}
+  </ul>
+
+  <h2>Day Plan</h2>
+  {% for day in summary.day_plan %}
+    <div class="day-block">
+      <p class="day-title">{{ day.day }}</p>
+      <ul>
+        {% for item in day.items %}
+          <li>{{ item }}</li>
+        {% empty %}
+          <li>No entries.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% empty %}
+    <ul><li>No day plan available.</li></ul>
+  {% endfor %}
+
+  <h2>Logistics</h2>
+  <ul>
+    {% for item in summary.logistics %}
+      <li>{{ item }}</li>
+    {% empty %}
+      <li>No logistics notes.</li>
+    {% endfor %}
+  </ul>
+
+  <h2>Reservations</h2>
+  <ul>
+    {% for item in summary.reservations %}
+      <li>{{ item }}</li>
+    {% empty %}
+      <li>No reservations listed.</li>
+    {% endfor %}
+  </ul>
+
+  <h2>Alternatives</h2>
+  <ul>
+    {% for item in summary.alternatives %}
+      <li>{{ item }}</li>
+    {% empty %}
+      <li>No alternatives listed.</li>
+    {% endfor %}
+  </ul>
+
+  <h2>Notes</h2>
+  <ul>
+    {% for item in summary.notes %}
+      <li>{{ item }}</li>
+    {% empty %}
+      <li>No additional notes.</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>

@@ -1,0 +1,4 @@
+Django>=6.0.4
+openai>=2.32.0
+python-dotenv>=1.2.2
+xhtml2pdf>=0.2.15
