@@ -47,6 +47,24 @@ class HomePageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "Manage subscription")
 
+    def test_home_sets_active_subscriber_flag_when_cookie_valid(self):
+        SubscriberAccess.objects.create(
+            email="active@example.com",
+            stripe_customer_id="cus_a",
+            stripe_subscription_id="sub_a",
+            subscription_status="active",
+        )
+        token = signing.dumps({"email": "active@example.com"}, salt="llama_subscription_access")
+        self.client.cookies["llama_subscription_access"] = token
+        response = self.client.get(self.home_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-active-subscriber="true"')
+
+    def test_home_sets_inactive_subscriber_flag_without_cookie(self):
+        response = self.client.get(self.home_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-active-subscriber="false"')
+
 
 class ChatApiTests(TestCase):
     def setUp(self):
@@ -201,6 +219,25 @@ class BillingApiTests(TestCase):
                     "city": "venice",
                     "conversationTurns": self.turns,
                     "email": "person@example.com",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["checkoutUrl"], "https://checkout.stripe.test/session")
+
+    @patch("travel_assistant.views.settings.STRIPE_MONTHLY_PRICE_ID", "price_123")
+    @patch("travel_assistant.views.settings.STRIPE_SECRET_KEY", "sk_test_123")
+    @patch("travel_assistant.views._stripe_client")
+    def test_create_checkout_session_allows_empty_conversation(self, mocked_client):
+        mocked_client.return_value.checkout.Session.create.return_value.url = "https://checkout.stripe.test/session"
+        response = self.client.post(
+            self.checkout_url,
+            data=json.dumps(
+                {
+                    "city": "venice",
+                    "conversationTurns": [],
+                    "email": "new@example.com",
                 }
             ),
             content_type="application/json",

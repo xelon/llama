@@ -5,7 +5,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Llama Inc | Travel Assistant</title>
-  <link rel="icon" type="image/svg+xml" href="{% static 'travel_assistant/img/favicon-travel-llama.svg' %}">
+  <link rel="icon" type="image/png" sizes="64x64" href="{% static 'travel_assistant/img/favicon-64.png' %}">
+  <link rel="icon" type="image/png" sizes="128x128" href="{% static 'travel_assistant/img/favicon-128.png' %}">
+  <link rel="icon" type="image/png" href="{% static 'travel_assistant/img/favicon.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'travel_assistant/img/apple-touch-icon.png' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Spectral:wght@400;500;600&display=swap" as="style">
@@ -15,7 +18,7 @@
   </noscript>
   <link rel="stylesheet" href="{% static 'travel_assistant/css/home.css' %}">
 </head>
-<body>
+<body data-active-subscriber="{% if has_active_subscription %}true{% else %}false{% endif %}">
   <main class="shell">
     <header class="hero">
       <h1>Good itineraries are compounding assets.</h1>
@@ -81,7 +84,17 @@
             {% if show_manage_subscription %}
               <a href="{% url 'billing_portal_redirect' %}" class="ghost-button manage-subscription-link">Manage subscription</a>
             {% endif %}
-            <button type="button" id="download-plan-button" class="ghost-button is-disabled" aria-disabled="true" title="Start a chat before downloading the plan.">Download Plan</button>
+            <button type="button" id="download-plan-button" class="ghost-button download-plan-button" aria-disabled="false">
+              <span class="download-plan-button__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+                  <path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M13 2v7h7"/>
+                  <path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M12 11v7M9 15l3 3 3-3"/>
+                  <circle class="download-plan-button__sparkle" cx="20.25" cy="3.85" r="1.2"/>
+                </svg>
+              </span>
+              <span class="download-plan-button__label">Download Plan</span>
+            </button>
           </div>
         </div>
 
@@ -108,25 +121,38 @@
 
   <div id="plan-modal" class="plan-modal" aria-hidden="true">
     <div class="plan-modal__backdrop" data-close-modal="true"></div>
-    <section class="plan-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
+    <section class="plan-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title" aria-describedby="plan-modal-subtitle">
       <header class="plan-modal__header">
-        <h3 id="plan-modal-title">Download Plan is Premium</h3>
-        <p id="plan-modal-subtitle">Subscribe monthly to unlock printable trip PDFs and polished download-ready plans.</p>
+        <p class="plan-modal__eyebrow">Premium download</p>
+        <h3 id="plan-modal-title">Unlock your trip PDF</h3>
+        <p id="plan-modal-subtitle" class="plan-modal__lede">Monthly access to polished, printable plans.</p>
       </header>
       <div class="premium-list">
-        <p>Includes:</p>
+        <p class="premium-list__title">Included</p>
         <ul>
           <li>One-click PDF export</li>
           <li>Structured itinerary summaries</li>
-          <li>Download-ready formatting for sharing</li>
+          <li>Share-ready formatting</li>
         </ul>
       </div>
-      <label for="subscription-email" class="sr-only">Email for subscription checkout</label>
-      <input id="subscription-email" type="email" autocomplete="email" placeholder="you@company.com" required>
+      <div class="plan-modal__email">
+        <label for="subscription-email" class="plan-modal__field-label">Your email</label>
+        <p id="subscription-email-hint" class="plan-modal__field-hint">No password and no account setup here—just this address so we can tie your subscription to downloads.</p>
+        <input
+          id="subscription-email"
+          type="email"
+          name="subscription-email"
+          autocomplete="email"
+          inputmode="email"
+          placeholder="you@company.com"
+          aria-describedby="subscription-email-hint plan-modal-status"
+          required
+        >
+      </div>
       <p id="plan-modal-status" class="plan-modal-status" role="status" aria-live="polite"></p>
       <footer class="plan-modal__actions">
-        <button type="button" id="close-plan-modal" class="ghost-button">Close</button>
-        <button type="button" id="start-subscription">Start Subscription</button>
+        <button type="button" id="close-plan-modal" class="ghost-button plan-modal__secondary">Close</button>
+        <button type="button" id="start-subscription" class="primary-button plan-modal__primary">Continue to checkout</button>
       </footer>
     </section>
   </div>

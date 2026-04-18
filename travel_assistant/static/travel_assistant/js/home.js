@@ -10,6 +10,7 @@ const messageInput = document.querySelector("#message");
 const sendButton = document.querySelector("#send-button");
 const errorLine = document.querySelector("#error-line");
 const downloadPlanButton = document.querySelector("#download-plan-button");
+const downloadPlanButtonLabel = downloadPlanButton?.querySelector(".download-plan-button__label");
 const planModal = document.querySelector("#plan-modal");
 const closePlanModalButton = document.querySelector("#close-plan-modal");
 const startSubscriptionButton = document.querySelector("#start-subscription");
@@ -24,6 +25,7 @@ const SUBSCRIBER_EMAIL_STORAGE_KEY = "llama_subscriber_email_v1";
 const LAST_CITY_SLUG_KEY = "llama_last_city_slug_v1";
 const toastEl = document.querySelector("#toast");
 const DOWNLOAD_PLAN_LABEL_DEFAULT = "Download Plan";
+const pageHasActiveSubscription = document.body?.dataset.activeSubscriber === "true";
 
 let selectedCity = cityButtons[0]?.dataset.city || "san-francisco";
 let cityConversations = {};
@@ -114,7 +116,9 @@ function updateDownloadPlanButtonState() {
     downloadPlanButton.classList.remove("is-disabled");
     downloadPlanButton.removeAttribute("aria-disabled");
     downloadPlanButton.classList.add("is-loading");
-    downloadPlanButton.textContent = "Preparing PDF…";
+    if (downloadPlanButtonLabel) {
+      downloadPlanButtonLabel.textContent = "Preparing PDF…";
+    }
     downloadPlanButton.setAttribute("aria-busy", "true");
     downloadPlanButton.removeAttribute("title");
     return;
@@ -123,12 +127,14 @@ function updateDownloadPlanButtonState() {
   downloadPlanButton.disabled = false;
   downloadPlanButton.classList.remove("is-loading");
   downloadPlanButton.removeAttribute("aria-busy");
-  const shouldDisableDownload = !canDownloadPlanForActiveChat();
+  const shouldDisableDownload = isSubmitting;
   downloadPlanButton.classList.toggle("is-disabled", shouldDisableDownload);
   downloadPlanButton.setAttribute("aria-disabled", shouldDisableDownload ? "true" : "false");
-  downloadPlanButton.textContent = DOWNLOAD_PLAN_LABEL_DEFAULT;
-  if (shouldDisableDownload && !isSubmitting) {
-    downloadPlanButton.title = "Start a chat before downloading the plan.";
+  if (downloadPlanButtonLabel) {
+    downloadPlanButtonLabel.textContent = DOWNLOAD_PLAN_LABEL_DEFAULT;
+  }
+  if (shouldDisableDownload) {
+    downloadPlanButton.title = "Wait for the reply to finish.";
   } else {
     downloadPlanButton.removeAttribute("title");
   }
@@ -167,6 +173,13 @@ function renderMarkdown(markdownText) {
 
 function setPlanModalOpen(isOpen) {
   planModal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+  if (isOpen && subscriptionEmailInput) {
+    window.requestAnimationFrame(() => {
+      subscriptionEmailInput.focus({ preventScroll: true });
+    });
+  } else if (!isOpen) {
+    downloadPlanButton?.focus({ preventScroll: true });
+  }
 }
 
 function setPlanModalStatus(message, hasError = false) {
@@ -421,10 +434,6 @@ function setSubmittingState(submitting) {
 }
 
 function openPlanPremiumInterstitial() {
-  if (!canDownloadPlanForActiveChat()) {
-    updateDownloadPlanButtonState();
-    return;
-  }
   setPlanModalOpen(true);
 }
 
@@ -440,6 +449,7 @@ async function streamAssistantReply(message) {
     body: JSON.stringify({
       city: citySlugAtRequestStart,
       message,
+      conversationTurns: cityTurns,
     }),
   });
 
@@ -621,10 +631,39 @@ applyBillingReturnFeedback();
 updateDownloadPlanButtonState();
 
 downloadPlanButton.addEventListener("click", async () => {
-  if (isDownloadingPlan || !canDownloadPlanForActiveChat()) {
+  if (isDownloadingPlan) {
     updateDownloadPlanButtonState();
     return;
   }
+  if (isSubmitting) {
+    return;
+  }
+
+  if (pageHasActiveSubscription) {
+    if (!canDownloadPlanForActiveChat()) {
+      showToast("Start a chat first");
+      return;
+    }
+    errorLine.textContent = "";
+    isDownloadingPlan = true;
+    updateDownloadPlanButtonState();
+    try {
+      await requestPlanPdfDownload();
+    } catch (error) {
+      errorLine.textContent = error.message || "Could not download plan right now.";
+    } finally {
+      isDownloadingPlan = false;
+      updateDownloadPlanButtonState();
+    }
+    return;
+  }
+
+  if (!canDownloadPlanForActiveChat()) {
+    setPlanModalStatus("");
+    openPlanPremiumInterstitial();
+    return;
+  }
+
   errorLine.textContent = "";
   isDownloadingPlan = true;
   updateDownloadPlanButtonState();
@@ -660,6 +699,20 @@ document.addEventListener("click", (event) => {
   if (!cityMenuPanel.contains(event.target) && !cityMenuToggle.contains(event.target)) {
     setCityMenuOpen(false);
   }
+});
+
+messageInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+  if (!(event.metaKey || event.ctrlKey)) {
+    return;
+  }
+  event.preventDefault();
+  if (sendButton.disabled) {
+    return;
+  }
+  chatForm.requestSubmit();
 });
 
 chatForm.addEventListener("submit", async (event) => {

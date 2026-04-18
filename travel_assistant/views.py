@@ -215,6 +215,13 @@ def _can_manage_subscription_from_request(request):
     return bool(_stripe_object_id(access.stripe_customer_id))
 
 
+def _has_active_subscription_from_request(request):
+    access = _subscriber_access_from_request(request)
+    if not access:
+        return False
+    return _is_active_subscription_status(access.subscription_status)
+
+
 @require_GET
 def home(request):
     return render(
@@ -223,6 +230,7 @@ def home(request):
         {
             "city_options": CITY_OPTIONS,
             "show_manage_subscription": _can_manage_subscription_from_request(request),
+            "has_active_subscription": _has_active_subscription_from_request(request),
         },
     )
 
@@ -249,6 +257,10 @@ def chat_api(request):
             status=400,
         )
 
+    history, history_error = _validate_turns_for_checkout(payload)
+    if history_error:
+        return history_error
+
     def sse_event(event_name, payload):
         return f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
 
@@ -259,6 +271,7 @@ def chat_api(request):
                 city_name=city_data["label"],
                 country=city_data["country"],
                 user_prompt=user_prompt,
+                history=history,
             ):
                 yield sse_event("delta", {"chunk": chunk})
             yield sse_event("end", {"ok": True})
@@ -300,6 +313,29 @@ def _validate_turns(payload):
 
     if not cleaned:
         return None, JsonResponse({"error": "No usable conversation turns found."}, status=400)
+    return cleaned, None
+
+
+def _validate_turns_for_checkout(payload):
+    """Subscription checkout may run before any chat; empty turns are allowed."""
+    turns = payload.get("conversationTurns")
+    if turns is None:
+        return [], None
+    if not isinstance(turns, list):
+        return None, JsonResponse({"error": "Invalid conversation format."}, status=400)
+    if len(turns) > MAX_CONVERSATION_TURNS:
+        return None, JsonResponse({"error": "Conversation is too long to export."}, status=400)
+
+    cleaned = []
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        role = turn.get("role")
+        content = (turn.get("content") or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        cleaned.append({"role": role, "content": content})
+
     return cleaned, None
 
 
@@ -409,7 +445,7 @@ def create_checkout_session_api(request):
     city_data = CITY_OPTIONS.get(city_slug)
     if not city_data:
         return JsonResponse({"error": "Choose San Francisco, Venice, or Cork."}, status=400)
-    _, error_response = _validate_turns(payload)
+    _, error_response = _validate_turns_for_checkout(payload)
     if error_response:
         return error_response
 
