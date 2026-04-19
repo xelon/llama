@@ -19,6 +19,23 @@
   <link rel="stylesheet" href="{% static 'travel_assistant/css/home.css' %}">
 </head>
 <body data-active-subscriber="{% if has_active_subscription %}true{% else %}false{% endif %}">
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('prototype-banner-dismissed') === '1') {
+          document.documentElement.classList.add('prototype-banner-dismissed');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <div id="prototype-banner" class="prototype-banner" role="note">
+    <p class="prototype-banner__text">
+      This is a prototype as part of Lorenzo Baloci's
+      <a href="https://docs.google.com/document/d/1dByMtmBhGxAM-xpkpU44vlSAu7onPCcdXiFirRPS31k/edit?usp=sharing" target="_blank" rel="noopener noreferrer">Written Exercise</a>
+      for Stripe.
+    </p>
+    <button type="button" id="prototype-banner-dismiss" class="prototype-banner__dismiss" aria-label="Dismiss prototype notice">×</button>
+  </div>
   <main class="shell">
     <header class="hero">
       <h1>Good itineraries are compounding assets.</h1>
@@ -161,5 +178,15 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js" defer></script>
   <script src="{% static 'travel_assistant/js/home.js' %}" defer></script>
+  <script>
+    (function () {
+      var btn = document.getElementById('prototype-banner-dismiss');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        document.documentElement.classList.add('prototype-banner-dismissed');
+        try { localStorage.setItem('prototype-banner-dismissed', '1'); } catch (e) {}
+      });
+    })();
+  </script>
 </body>
 </html>
